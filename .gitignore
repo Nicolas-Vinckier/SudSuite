@@ -9,3 +9,6 @@
 *.ico
 *.svg
 *.webp
+
+# Fichier de configuration
+image_sorting_config.json
