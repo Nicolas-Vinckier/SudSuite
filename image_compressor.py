@@ -5,8 +5,8 @@ import sys
 try:
     from PIL import Image
 except ImportError:
-    print("❌ La bibliothèque 'Pillow' n'est pas installée.")
-    print("👉 Veuillez l'installer avec la commande suivante :")
+    print("[Erreur] La bibliotheque 'Pillow' n'est pas installee.")
+    print("Veuillez l'installer avec la commande suivante :")
     print("   pip install Pillow")
     sys.exit(1)
 
@@ -24,24 +24,24 @@ def get_original_quality(img):
 
 def compress_image(input_path):
     if not os.path.exists(input_path):
-        print(f"❌ Erreur : Le fichier {input_path} n'existe pas.")
+        print(f"[Erreur] Le fichier {input_path} n'existe pas.")
         return
 
     original_size = os.path.getsize(input_path)
-    print(f"\n📸 Fichier en cours : {os.path.basename(input_path)}")
-    print(f"📦 Taille originale  : {format_size(original_size)}")
+    print(f"\n[Info] Fichier en cours : {os.path.basename(input_path)}")
+    print(f"[Poids] Taille originale  : {format_size(original_size)}")
 
     try:
         img = Image.open(input_path)
     except Exception as e:
-        print(f"❌ Erreur lors de l'ouverture de l'image : {e}")
+        print(f"[Erreur] lors de l'ouverture de l'image : {e}")
         return
 
     # Identifier le format d'origine
     fmt = img.format.lower() if img.format else "inconnu"
     
     if fmt not in ['png', 'jpeg', 'jpg', 'webp', 'mpo', 'gif']:
-        print(f"⚠️ Format {fmt} non standard. L'image sera convertie automatiquement.")
+        print(f"[Attention] Format {fmt} non standard. L'image sera convertie automatiquement.")
 
     save_format = 'JPEG' if fmt in ['jpg', 'jpeg', 'mpo'] else ('WEBP' if fmt == 'webp' else 'PNG')
     
@@ -52,15 +52,15 @@ def compress_image(input_path):
     print("\n" + "="*55)
     print("🎨 SÉLECTION DU MODE DE COMPRESSION")
     print("="*55)
-    print("1. 💎 SANS PERTE (Lossless) : Optimisation sans dégradation (Meilleur pour garder la qualité 100%)")
-    print("2. 📉 AVEC PERTE (Lossy)    : Réduction de la qualité pour un fichier beaucoup plus léger")
+    print("1. SANS PERTE (Lossless) : Optimisation sans degradation (Meilleur pour garder la qualite 100%)")
+    print("2. AVEC PERTE (Lossy)    : Reduction de la qualite pour un fichier beaucoup plus leger")
     
-    choix = input("\n👉 Votre choix (1 ou 2) : ").strip()
+    choix = input("\nVotre choix (1 ou 2) : ").strip()
 
     buffer = io.BytesIO()
     
     if choix == '1':
-        print("\n⚙️ [Traitement] Compression SANS PERTE en cours...")
+        print("\n[Traitement] Compression SANS PERTE en cours...")
         if save_format == 'JPEG':
             # Meilleure conservation possible pour le JPEG via PIL
             q = get_original_quality(img)
@@ -82,7 +82,7 @@ def compress_image(input_path):
     elif choix == '2':
         print("\n--- Compression AVEC PERTE ---")
         try:
-            quality = int(input("👉 Niveau de qualité souhaité (1-100, ex: 70) : ").strip())
+            quality = int(input("Niveau de qualite souhaite (1-100, ex: 70) : ").strip())
         except ValueError:
             print("Entrée invalide. Utilisation de la qualité par défaut (70).")
             quality = 70
@@ -90,14 +90,14 @@ def compress_image(input_path):
         quality = max(1, min(100, quality))
 
         # Proposition de conversion WebP : excellent compromis poids/qualité
-        format_choisi = input("👉 Voulez-vous convertir en WebP pour un gain maximum ? (o/n, defaut: o) : ").strip().lower()
+        format_choisi = input("Voulez-vous convertir en WebP pour un gain maximum ? (o/n, defaut: o) : ").strip().lower()
         if format_choisi != 'n':
              save_format = 'WEBP'
              
         if save_format == 'WEBP' and img.mode not in ('RGB', 'RGBA'):
              img = img.convert('RGBA' if 'A' in img.mode else 'RGB')
              
-        print("\n🔍 [Simulation] Calcul des risques et bénéfices en cours...")
+        print("\n[Analyse] Calcul des risques et BENEFICES en cours...")
 
         if save_format == 'JPEG':
             img.save(buffer, format='JPEG', optimize=True, quality=quality)
@@ -114,31 +114,31 @@ def compress_image(input_path):
         loss_percentage = 100 - quality
         size_reduction = (original_size - new_size) / original_size * 100 if original_size > 0 else 0
         
-        print("\n" + "⚖️ "*15)
-        print("📊 ANALYSE DES RISQUES ET BÉNÉFICES")
-        print("⚖️ "*15)
+        print("\n" + "= "*15)
+        print("ANALYSE DES RISQUES ET BENEFICES")
+        print("= "*15)
         
-        print(f"📉 BÉNÉFICE : Réduction du poids de {size_reduction:.2f}%")
+        print(f"BENEFICE : Reduction du poids de {size_reduction:.2f}%")
         print(f"   (De {format_size(original_size)} à {format_size(new_size)})")
         
         if size_reduction < 0:
-            print("\n❌ ATTENTION : La compression a AUGMENTÉ la taille de l'image (l'image d'origine est déjà trop compressée).")
+            print("\n[Attention] La compression a AUGMENTE la taille de l'image (l'image d'origine est deja trop compressee).")
         
-        print(f"\n🚨 RISQUE   : Dégradation de la qualité estimée à {loss_percentage}%.")
+        print(f"\n[Risque] Degradaion de la qualite estimee a {loss_percentage}%.")
         if quality < 50:
-            print("   ↳ ⚠️  RISQUE ÉLEVÉ  : Artefacts très visibles, image potentiellement floue, couleurs baveuses.")
+            print("   -> RISQUE ELEVE  : Artefacts tres visibles, image potentiellement floue, couleurs baveuses.")
         elif quality < 80:
-            print("   ↳ 🔸 RISQUE MODÉRÉ : Légère perte de netteté ou petits artefacts (acceptable pour le web).")
+            print("   -> RISQUE MODERE : Legere perte de nettete ou petits artefacts (acceptable pour le web).")
         else:
-            print("   ↳ 🔹 RISQUE FAIBLE : Perte de qualité quasi imperceptible à l'œil nu.")
+            print("   -> RISQUE FAIBLE : Perte de qualite quasi imperceptible a l'oeil nu.")
         
-        confirmer = input("\n❓ Procéder à la sauvegarde avec cette qualité ? (o/n) : ").strip().lower()
+        confirmer = input("\nProceder a la sauvegarde avec cette qualite ? (o/n) : ").strip().lower()
         if confirmer != 'o':
-            print("🚫 Opération annulée par l'utilisateur.")
+            print("Operation annulee par l'utilisateur.")
             return
 
     else:
-        print("❌ Choix invalide.")
+        print("[Erreur] Choix invalide.")
         return
         
     print("\n" + "-"*55)
@@ -160,10 +160,10 @@ def compress_image(input_path):
     with open(output_path, 'wb') as f:
         f.write(buffer.getvalue())
 
-    print(f"✅ Fichier sauvegardé avec succès ! ")
-    print(f"📂 Chemin : {output_path}")
-    print(f"💾 Gain d'espace total : {((original_size - new_size) / original_size) * 100:.2f}%")
-    print(f"📉 Nouvelle taille : {format_size(new_size)}")
+    print("Succes ! Fichier sauvegarde avec succes ! ")
+    print(f"Chemin : {output_path}")
+    print(f"Gain d'espace total : {((original_size - new_size) / original_size) * 100:.2f}%")
+    print(f"Nouvelle taille : {format_size(new_size)}")
 
 if __name__ == "__main__":
     print(r'''
