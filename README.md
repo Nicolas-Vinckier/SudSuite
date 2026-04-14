@@ -28,6 +28,18 @@ Un outil d'organisation automatisé pour vos photos et vidéos. Il trie vos fich
 - **Trie inversé (Restauration)** : Option pour annuler un tri et renvoyer tous les fichiers de la destination vers la source (avec gestion des doublons).
 - **Full Cleaning** : Option pour tout réinitialiser (suppression de la config et de TOUTES les photos dans source/destination après confirmation du nombre d'éléments).
 
+### 3. 📦 Sud Archive (`folder_compressor.py`)
+
+Un outil de compression de dossiers intelligent pour archiver vos projets tout en ignorant les fichiers inutiles.
+
+- **3 Modes de Compression** : 
+  1. **Classique** : Vitesse maximale (ZIP).
+  2. **Medium** : Équilibre poids/vitesse (ZIP optimisé).
+  3. **Ultra** : Compression maximale (Format `.tar.xz` via LZMA).
+- **Filtres Smart** : Ignore automatiquement les dossiers comme `.git`, `node_modules`, `__pycache__`, etc.
+- **Auto-Naming** : Génère automatiquement un nom avec horodatage (ex: `Projet_Archive_20240414_2125.zip`).
+- **Estimation & Vérification** : Calcule le gain d'espace et vérifie l'intégrité de l'archive après création.
+
 ---
 
 ## 🛠️ Installation
@@ -66,6 +78,14 @@ Le menu interactif vous propose 4 options :
 2.  **Recommencer la config** : Change les dossiers source/destination ou le mode.
 3.  **Trie inversé** : Ramène les fichiers triés vers la source.
 4.  **Full cleaning** : Supprime la config et vide les dossiers source/dest.
+
+### Compresser un dossier (Archivage)
+
+```bash
+python folder_compressor.py
+```
+
+Laissez-vous guider par le menu pour choisir le dossier et le niveau de compression.
 
 ---
 
