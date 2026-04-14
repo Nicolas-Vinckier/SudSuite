@@ -70,14 +70,26 @@ def detecter_format_nom(source):
     all_files = []
     if not os.path.exists(source):
         return None
-        
+
     for root, dirs, files in os.walk(source):
         for f in files:
-            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.mp4', '.avi', '.mov', '.mkv')):
+            if f.lower().endswith(
+                (
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".gif",
+                    ".bmp",
+                    ".mp4",
+                    ".avi",
+                    ".mov",
+                    ".mkv",
+                )
+            ):
                 all_files.append(f)
-    
+
     if not all_files:
-        return None # Aucun fichier à analyser
+        return None  # Aucun fichier à analyser
 
     # Échantillon de 10% (minimum 1, maximum len)
     sample_size = max(1, int(len(all_files) * 0.1))
@@ -92,7 +104,7 @@ def detecter_format_nom(source):
             y, m, d = m422.groups()
             if 1900 <= int(y) <= 2100 and 1 <= int(m) <= 12 and 1 <= int(d) <= 31:
                 scores["AAAAMMDD"] += 1
-        
+
         # Test 2-2-4 (DDMMAAAA ou MMDDAAAA)
         m224 = re.search(r"(?<!\d)(\d{2})(\d{2})(\d{4})(?!\d)", filename)
         if m224:
@@ -118,7 +130,19 @@ def a_des_fichiers_media(source):
         return False
     for root, dirs, files in os.walk(source):
         for f in files:
-            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.mp4', '.avi', '.mov', '.mkv')):
+            if f.lower().endswith(
+                (
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".gif",
+                    ".bmp",
+                    ".mp4",
+                    ".avi",
+                    ".mov",
+                    ".mkv",
+                )
+            ):
                 return True
     return False
 
@@ -127,18 +151,22 @@ def demander_format_nom(source):
     """Gère la détection et la sélection manuelle du format de nom."""
     detecte = detecter_format_nom(source)
     format_nom = None
-    
+
     if detecte:
         print(f"\n[Analyse] Analyse d'un echantillon de fichiers dans '{source}'...")
         print(f"Format de nom de fichier detecte : {detecte}")
         confirmation = input("Est-ce correct ? (o/n) : ").strip().lower()
-        if confirmation == 'o':
+        if confirmation == "o":
             format_nom = detecte
     else:
-        print(f"\n[Info] Impossible de detecter automatiquement le format (noms de fichiers inconnus).")
+        print(
+            f"\n[Info] Impossible de detecter automatiquement le format (noms de fichiers inconnus)."
+        )
 
     if format_nom is None:
-        print("\nVeuillez choisir le format de date utilise dans vos noms de fichiers :")
+        print(
+            "\nVeuillez choisir le format de date utilise dans vos noms de fichiers :"
+        )
         print("1) AAAAMMDD (ex: 20231231)")
         print("2) DDMMAAAA (ex: 31122023)")
         print("3) MMDDAAAA (ex: 12312023)")
@@ -146,7 +174,7 @@ def demander_format_nom(source):
         while choix_fmt not in ["1", "2", "3"]:
             choix_fmt = input("Votre choix (1, 2 ou 3) : ").strip()
         format_nom = {"1": "AAAAMMDD", "2": "DDMMAAAA", "3": "MMDDAAAA"}[choix_fmt]
-    
+
     return format_nom
 
 
@@ -183,13 +211,15 @@ def configurer():
         if a_des_fichiers_media(source):
             format_nom = demander_format_nom(source)
         else:
-            print(f"\n[Info] Dossier '{source}' vide. Le format sera demande lors du premier tri.")
+            print(
+                f"\n[Info] Dossier '{source}' vide. Le format sera demande lors du premier tri."
+            )
 
     config = {
-        "source": source, 
-        "destination": destination, 
+        "source": source,
+        "destination": destination,
         "mode_tri": mode_tri,
-        "format_nom": format_nom
+        "format_nom": format_nom,
     }
 
     sauvegarder_config(config)
@@ -204,7 +234,11 @@ def get_date_from_file(filepath, filename, mode, format_nom=None):
             match = re.search(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)", filename)
             if match:
                 annee, mois, jour = match.groups()
-                if 1900 <= int(annee) <= 2100 and 1 <= int(mois) <= 12 and 1 <= int(jour) <= 31:
+                if (
+                    1900 <= int(annee) <= 2100
+                    and 1 <= int(mois) <= 12
+                    and 1 <= int(jour) <= 31
+                ):
                     return annee, mois_fr.get(mois, mois)
 
         # Formats avec l'année à la fin (DDMMAAAA ou MMDDAAAA)
@@ -217,7 +251,7 @@ def get_date_from_file(filepath, filename, mode, format_nom=None):
                         # g1=jour, g2=mois
                         if 1 <= int(g1) <= 31 and 1 <= int(g2) <= 12:
                             return annee, mois_fr.get(g2, g2)
-                    else: # MMDDAAAA
+                    else:  # MMDDAAAA
                         # g1=mois, g2=jour
                         if 1 <= int(g1) <= 12 and 1 <= int(g2) <= 31:
                             return annee, mois_fr.get(g1, g1)
@@ -228,7 +262,9 @@ def get_date_from_file(filepath, filename, mode, format_nom=None):
             prefix, annee, mois, jour = match_strict.groups()
             return annee, mois_fr.get(mois, mois)
 
-        print(f"[{filename}] Impossible d'extraire la date avec le format {format_nom}. Fichier non classé.")
+        print(
+            f"[{filename}] Impossible d'extraire la date avec le format {format_nom}. Fichier non classé."
+        )
         return None, None
 
     elif mode == "modification":
@@ -284,7 +320,9 @@ def copier_coller_media(config):
             ):
                 continue
 
-            annee, mois = get_date_from_file(filepath, filename, mode_tri, config.get("format_nom"))
+            annee, mois = get_date_from_file(
+                filepath, filename, mode_tri, config.get("format_nom")
+            )
 
             if not annee or not mois:
                 continue
@@ -343,10 +381,20 @@ def tri_inverse(config):
         os.makedirs(source)
 
     fichiers_deplaces = 0
-    extensions_media = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.mp4', '.avi', '.mov', '.mkv')
+    extensions_media = (
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".mkv",
+    )
 
     print(f"\n--- Lancement du tri inverse (Dest -> Source) ---")
-    
+
     for root, dirs, files in os.walk(destination):
         # Ignorer le dossier 'doublon' s'il existe et qu'on ne veut pas y toucher
         # (Ou on peut choisir de le vider aussi, ici on vide tout)
@@ -354,12 +402,15 @@ def tri_inverse(config):
             if filename.lower().endswith(extensions_media):
                 filepath = os.path.join(root, filename)
                 dest_path = os.path.join(source, filename)
-                
+
                 # Gestion simple si le fichier existe déjà dans la source
                 # (on ajoute un timestamp pour éviter l'écrasement)
                 if os.path.exists(dest_path):
                     name, ext = os.path.splitext(filename)
-                    dest_path = os.path.join(source, f"{name}_restaure_{datetime.datetime.now().strftime('%H%M%S')}{ext}")
+                    dest_path = os.path.join(
+                        source,
+                        f"{name}_restaure_{datetime.datetime.now().strftime('%H%M%S')}{ext}",
+                    )
 
                 try:
                     shutil.move(filepath, dest_path)
@@ -387,22 +438,22 @@ def full_cleaning(config):
     """Supprime la configuration et TOUS les médias dans source et destination."""
     source = config.get("source")
     destination = config.get("destination")
-    
+
     print("\n" + "!" * 50)
     print("ATTENTION : CETTE ACTION EST IRREVERSIBLE")
     print("!" * 50)
-    
+
     # Comptage des fichiers et dossiers
     total_files = 0
     total_dirs = 0
-    
+
     for path in [source, destination]:
         if os.path.exists(path):
             for root, dirs, files in os.walk(path):
                 total_files += len(files)
                 total_dirs += len(dirs)
-            total_dirs += 1 # Le dossier racine lui-même
-            
+            total_dirs += 1  # Le dossier racine lui-même
+
     print(f"\nCette operation va supprimer :")
     print(f"  - Le fichier de configuration : {CONFIG_FILE}")
     print(f"  - Dossier Source      : '{source}'")
@@ -410,9 +461,11 @@ def full_cleaning(config):
     print(f"\nBILAN DE SUPPRESSION :")
     print(f"  - Env. {total_files} fichiers seront SUPPRIMES DEFINITIVEMENT.")
     print(f"  - Env. {total_dirs} dossiers seront SUPPRIMES DEFINITIVEMENT.")
-    
-    confirmation = input("\nEtes-vous ABSOLUMENT sûr de vouloir tout supprimer ? (ecrire 'OUI' en majuscules) : ").strip()
-    
+
+    confirmation = input(
+        "\nEtes-vous ABSOLUMENT sûr de vouloir tout supprimer ? (ecrire 'OUI' en majuscules) : "
+    ).strip()
+
     if confirmation == "OUI":
         # Suppression des dossiers
         for path in [source, destination]:
@@ -422,7 +475,7 @@ def full_cleaning(config):
                     print(f"Suppression de : {path} [OK]")
                 except Exception as e:
                     print(f"[Erreur] Impossible de supprimer {path} : {e}")
-        
+
         # Suppression du fichier de config
         if os.path.exists(CONFIG_FILE):
             try:
@@ -430,7 +483,7 @@ def full_cleaning(config):
                 print(f"Suppression de : {CONFIG_FILE} [OK]")
             except Exception as e:
                 print(f"[Erreur] Impossible de supprimer {CONFIG_FILE} : {e}")
-                
+
         print("\n[Nettoyage termine] Tout a ete reinitialise.")
     else:
         print("\nOperation annulee. Rien n'a ete supprime.")
@@ -439,14 +492,12 @@ def full_cleaning(config):
 def main():
     print(
         r"""
-   _____           _  _____                 _     _             
-  / ____|         | |/ ____|               | |   (_)            
- | (___  _   _  __| | (___   ___  _ __ _ __| |_   _ _ __   __ _ 
-  \___ \| | | |/ _` |\___ \ / _ \| '__| '__| __| | | '_ \ / _` |
-  ____) | |_| | (_| |____) | (_) | |  | |  | |_ _| | | | | (_| |
- |_____/ \__,_|\__,_|_____/ \___/|_|  |_|   \__(_)_|_| |_|\__, |
-                                                            __/ |
-                                                           |___/ 
+ ____            _ ____             _   _             
+/ ___| _   _  __| / ___|  ___  _ __| |_(_)_ __   __ _ 
+\___ \| | | |/ _` \___ \ / _ \| '__| __| | '_ \ / _` |
+ ___) | |_| | (_| |___) | (_) | |  | |_| | | | | (_| |
+|____/ \__,_|\__,_|____/ \___/|_|   \__|_|_| |_|\__, |
+                                                |___/ 
     """
     )
 
