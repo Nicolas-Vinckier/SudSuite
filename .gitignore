@@ -9,6 +9,9 @@
 *.ico
 *.svg
 *.webp
+*.heic
+*.jfif
+*.crdownload
 
 # Fichier de configuration
 image_sorting_config.json

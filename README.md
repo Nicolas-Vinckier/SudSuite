@@ -32,13 +32,25 @@ Un outil d'organisation automatisé pour vos photos et vidéos. Il trie vos fich
 
 Un outil de compression de dossiers intelligent pour archiver vos projets tout en ignorant les fichiers inutiles.
 
-- **3 Modes de Compression** : 
+- **3 Modes de Compression** :
   1. **Classique** : Vitesse maximale (ZIP).
   2. **Medium** : Équilibre poids/vitesse (ZIP optimisé).
   3. **Ultra** : Compression maximale (Format `.tar.xz` via LZMA).
 - **Filtres Smart** : Ignore automatiquement les dossiers comme `.git`, `node_modules`, `__pycache__`, etc.
 - **Auto-Naming** : Génère automatiquement un nom avec horodatage (ex: `Projet_Archive_20240414_2125.zip`).
 - **Estimation & Vérification** : Calcule le gain d'espace et vérifie l'intégrité de l'archive après création.
+
+### 4. 🏷️ Sud Rename (`image_renamer.py`)
+
+Un outil de renommage en masse puissant basé sur la date de modification des fichiers. Idéal pour uniformiser les noms de fichiers provenant de différentes sources.
+
+- **Sécurité maximale** : Crée automatiquement un nouveau dossier `[Nom]_renamed` pour ne pas écraser vos fichiers originaux.
+- **Basé sur la date** : Utilise la date de dernière modification pour générer le nouveau nom.
+- **Format flexible** : Supporte les tokens `YYYY`, `MM`, `DD`, `HH`, `mm`, `SS`.
+- **Gestion des collisions** : Utilise le token `#` pour ajouter un index si plusieurs fichiers ont le même horodatage.
+- **Support Multi-Média** : Fonctionne avec les images et les vidéos.
+- **Sécurité** : Prévisualisation des 5 premiers fichiers avant confirmation du renommage.
+- **Prévisualisation** : Affiche un échantillon des changements avant confirmation.
 
 ---
 
@@ -86,6 +98,16 @@ python folder_compressor.py
 ```
 
 Laissez-vous guider par le menu pour choisir le dossier et le niveau de compression.
+
+### Renommer ses fichiers en masse
+
+```bash
+python image_renamer.py
+```
+
+1.  Indiquez le dossier contenant les médias.
+2.  Choisissez votre format de renommage (ex: `YYYYMMDD_HHmmSS_#`).
+3.  Vérifiez la prévisualisation et confirmez.
 
 ---
 
