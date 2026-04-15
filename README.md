@@ -75,6 +75,17 @@ Un outil puissant pour redimensionner vos images tout en gérant intelligemment 
 - **En masse** : Supporte le traitement de fichiers uniques ou de dossiers entiers.
 - **Qualité** : Utilise le rééchantillonnage Lanczos pour une netteté maximale.
 
+### 7. 🚀 Sud Master (`image_master.py`)
+
+L'outil ultime de la suite qui permet de combiner le redimensionnement, la conversion et la compression en une seule opération fluide.
+
+- **Workflow tout-en-un** : Sélectionnez les étapes à la carte (Resize, Convert, Compress) selon vos besoins.
+- **Intelligent & Adaptatif** :
+  - **Fichier seul** : Sauvegarde le résultat au même endroit avec un suffixe descriptif (ex: `image_800x600_min.webp`).
+  - **Dossier complet** : Regroupe tout le traitement dans un dossier de sortie dédié (`_MASTER`).
+- **Optimisation séquentielle** : Applique toutes les transformations en une seule fois pour une rapidité maximale et une usure minimale du disque.
+- **Bilan Complet** : Affiche un résumé détaillé du gain d'espace total après le traitement combiné.
+
 ---
 
 ## 🛠️ Installation
@@ -159,6 +170,20 @@ python image_resizer.py ./vacances
 1.  Indiquez le fichier ou dossier à traiter.
 2.  Entrez les dimensions cibles (Largeur et Hauteur).
 3.  Sélectionnez la méthode de redimensionnement (le mode "Remplissage" est idéal pour le portrait/paysage).
+
+### Utiliser le Master Tool (Tout-en-un)
+
+```bash
+# Pour un dossier complet
+python image_master.py ./mon_dossier
+
+# Pour un fichier unique (sauvegarde locale avec suffixe)
+python image_master.py photo.jpg
+```
+
+1.  Lancez le script avec un chemin en argument (ou glissez-déposez).
+2.  Cochez les étapes souhaitées (`📏`, `🔄`, `🗜️`).
+3.  Configurez vos réglages et admirez le gain de place final.
 
 ---
 
