@@ -52,6 +52,17 @@ Un outil de renommage en masse puissant basé sur la date de modification des fi
 - **Sécurité** : Prévisualisation des 5 premiers fichiers avant confirmation du renommage.
 - **Prévisualisation** : Affiche un échantillon des changements avant confirmation.
 
+### 5. 🔄 Sud Convert (`image_convertissor.py`)
+
+Un outil de conversion d'images polyvalent qui permet de changer le format de vos fichiers tout en préservant la qualité maximale.
+
+- **Formats de sortie supportés** : PNG, JPEG, WebP, BMP, TIFF, GIF.
+- **Conversion Sans Perte** : Utilise les réglages optimaux pour chaque format (ex: `lossless=True` pour le WebP).
+- **Idempotence** : Détecte les fichiers déjà convertis dans le dossier de destination et les ignore pour éviter les doublons et gagner du temps.
+- **Organisation de sortie** : Crée automatiquement un dossier `[Nom]_convert` ou `converted` pour isoler les fichiers transformés.
+- **Double Barre de Progression** : Rendu fluide affichant l'avancement global du lot ainsi que l'état de traitement de l'image actuelle sur une seule ligne.
+- **Auto-Gestion du canal Alpha** : Convertit intelligemment la transparence (RGBA vers RGB) vers un fond blanc lors du passage vers des formats comme le JPEG.
+
 ---
 
 ## 🛠️ Installation
@@ -108,6 +119,20 @@ python image_renamer.py
 1.  Indiquez le dossier contenant les médias.
 2.  Choisissez votre format de renommage (ex: `YYYYMMDD_HHmmSS_#`).
 3.  Vérifiez la prévisualisation et confirmez.
+
+### Convertir ses images
+
+```bash
+# Unitairement
+python image_convertissor.py photo.jpg
+
+# Par dossier complet
+python image_convertissor.py ./mes_images
+```
+
+1.  Passez le chemin du fichier ou dossier en argument.
+2.  Choisissez le format cible via le menu interactif.
+3.  Vérifiez le bilan final affiché dans le terminal.
 
 ---
 
