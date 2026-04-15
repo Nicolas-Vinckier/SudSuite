@@ -63,6 +63,18 @@ Un outil de conversion d'images polyvalent qui permet de changer le format de vo
 - **Double Barre de Progression** : Rendu fluide affichant l'avancement global du lot ainsi que l'état de traitement de l'image actuelle sur une seule ligne.
 - **Auto-Gestion du canal Alpha** : Convertit intelligemment la transparence (RGBA vers RGB) vers un fond blanc lors du passage vers des formats comme le JPEG.
 
+### 6. 📏 Sud Resize (`image_resizer.py`)
+
+Un outil puissant pour redimensionner vos images tout en gérant intelligemment le rapport d'aspect. Parfait pour adapter des photos haute résolution à des formats spécifiques (ex: passage du paysage au portrait) sans déformation.
+
+- **Modes de Redimensionnement** :
+  1. **Remplissage (Fill)** : Redimensionne et recadre automatiquement l'image au centre pour remplir les dimensions cibles. Idéal pour transformer une photo paysage en portrait.
+  2. **Adaptation (Fit)** : Redimensionne l'image pour qu'elle tienne entièrement dans le cadre (ajoute des bandes si nécessaire).
+  3. **Étirage (Stretch)** : Redimensionne sans conserver le ratio (déformation).
+- **Auto-Naming** : Sauvegarde les fichiers avec les dimensions et un horodatage (`YYYYMMDD_HHMMSS`) pour éviter les écrasements.
+- **En masse** : Supporte le traitement de fichiers uniques ou de dossiers entiers.
+- **Qualité** : Utilise le rééchantillonnage Lanczos pour une netteté maximale.
+
 ---
 
 ## 🛠️ Installation
@@ -133,6 +145,20 @@ python image_convertissor.py ./mes_images
 1.  Passez le chemin du fichier ou dossier en argument.
 2.  Choisissez le format cible via le menu interactif.
 3.  Vérifiez le bilan final affiché dans le terminal.
+
+### Redimensionner ses images
+
+```bash
+# Lancez le script
+python image_resizer.py
+
+# Ou passez un chemin en argument
+python image_resizer.py ./vacances
+```
+
+1.  Indiquez le fichier ou dossier à traiter.
+2.  Entrez les dimensions cibles (Largeur et Hauteur).
+3.  Sélectionnez la méthode de redimensionnement (le mode "Remplissage" est idéal pour le portrait/paysage).
 
 ---
 
