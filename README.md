@@ -86,6 +86,16 @@ L'outil ultime de la suite qui permet de combiner le redimensionnement, la conve
 - **Optimisation séquentielle** : Applique toutes les transformations en une seule fois pour une rapidité maximale et une usure minimale du disque.
 - **Bilan Complet** : Affiche un résumé détaillé du gain d'espace total après le traitement combiné.
 
+### 8. 🔒 Sud Vault Sync (`sud_vault_sync.py`)
+
+Un outil de sécurité robuste permettant de chiffrer un dossier local vers un dossier distant (type Google Drive, OneDrive) et de synchroniser les modifications de manière bidirectionnelle.
+
+- **Gestion Sécurisée de la Clé** : Génération et chargement d'un fichier `sudsuite.key` (à conserver précieusement et copier sur vos autres PC).
+- **Mode Chiffrement (Local -> Cloud)** : Chiffre le contenu complet d'un dossier avec l'extension `.sud` en conservant l'arborescence.
+- **Mode Déchiffrement (Cloud -> Local)** : Restaure les fichiers originaux à partir du dossier chiffré.
+- **Synchronisation Continue Bidirectionnelle** : Applique intelligemment les ajouts, modifications et suppressions entre le local et le dossier chiffré cloud en permanence.
+- **Sécurité** : Les fichiers originaux ne sont écrasés qu'en cas de mise à jour légitime et les modes unidirectionnels ne font que des copies.
+
 ---
 
 ## 🛠️ Installation
