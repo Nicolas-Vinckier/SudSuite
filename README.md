@@ -96,6 +96,18 @@ Un outil de sécurité robuste permettant de chiffrer un dossier local vers un d
 - **Synchronisation Continue Bidirectionnelle** : Applique intelligemment les ajouts, modifications et suppressions entre le local et le dossier chiffré cloud en permanence.
 - **Sécurité** : Les fichiers originaux ne sont écrasés qu'en cas de mise à jour légitime et les modes unidirectionnels ne font que des copies.
 
+### 9. 📥 SudGit Sync (`SudGit/sud_git_sync.py`)
+
+Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plusieurs dépôts Git locaux simultanément.
+
+- **Modes de Lancement** :
+  - **Unique** : Une vérification complète à la demande.
+  - **Continu** : Boucle de surveillance automatique avec intervalle configurable (ex: toutes les 60s).
+- **Scan en Masse** : Ajoutez instantanément tous vos projets en scannant un dossier parent (détection automatique des dossiers `.git`).
+- **Clean Sync (Prune)** : Utilise `git fetch --prune` pour nettoyer automatiquement les références aux branches supprimées sur le serveur.
+- **Sécurité & Visibilité** : Affichage en tableau pour une gestion claire des dépôts et aucune opération de `push` automatique pour protéger vos commits locaux.
+- **Bilan Global** : Statut précis pour chaque dépôt (À jour, Mis à jour, Erreur).
+
 ---
 
 ## 🛠️ Installation
@@ -194,6 +206,16 @@ python image_master.py photo.jpg
 1.  Lancez le script avec un chemin en argument (ou glissez-déposez).
 2.  Cochez les étapes souhaitées (`📏`, `🔄`, `🗜️`).
 3.  Configurez vos réglages et admirez le gain de place final.
+
+### Synchroniser ses dépôts Git
+
+```bash
+python SudGit/sud_git_sync.py
+```
+
+1.  Lancez le script via votre terminal.
+2.  Dans le menu Principal, allez dans la configuration (choix `2`) pour ajouter vos dossiers Git.
+3.  Revenez au menu principal et lancez la GitSync (choix `1`) pour tout mettre à jour en cascade.
 
 ---
 
