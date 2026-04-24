@@ -1,343 +1,338 @@
 import os
 import sys
 import time
-import io
-import shutil
-from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-# --- COMPATIBILITÉ WINDOWS ---
-if sys.platform == "win32":
-    os.system("")  # Active le support des codes ANSI/VT100
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except AttributeError:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+from PIL import Image
 
-try:
-    from PIL import Image
-except ImportError:
-    print("❌ La bibliothèque 'Pillow' n'est pas installée.")
-    print("Veuillez l'installer avec la commande suivante :")
-    print("   pip install Pillow")
-    sys.exit(1)
-
-# --- CONFIGURATION & CONSTANTES ---
-VALID_EXTENSIONS = (".png", ".jpeg", ".jpg", ".webp", ".bmp", ".tiff", ".gif")
-RESIZE_METHODS = {
-    "1": "Remplissage (Recadrage centré)",
-    "2": "Adaptation (Bandes noires/transparentes)",
-    "3": "Étirage (Peut déformer l'image)",
-}
-SUPPORTED_OUTPUT_FORMATS = {
-    "1": ("PNG", ".png"),
-    "2": ("JPEG", ".jpg"),
-    "3": ("WEBP", ".webp"),
-    "4": ("BMP", ".bmp"),
-    "5": ("TIFF", ".tiff"),
-}
+from image_common import (
+    ask_input_paths,
+    ask_output_dir,
+    ask_yes_no,
+    avoid_same_input_output,
+    configure_console,
+    extension_for_format,
+    format_size,
+    get_image_infos,
+    get_target_files,
+    get_total_size,
+    make_unique_path,
+    print_banner,
+    print_image_table,
+    render_progress,
+    source_save_format_from_image,
+)
+from image_resizer import ask_resize_config, format_dimension_mode, resize_pil_image
+from image_convertissor import ask_convert_config, prepare_image_for_format, save_params_for_format
+from image_compressor import (
+    ask_compress_config,
+    compress_pil_image_to_buffer,
+    compression_mode_label,
+    normalize_compress_config,
+)
 
 
-# --- UTILITAIRES ---
-def format_size(size_in_bytes):
-    """Formate une taille en octets vers une unité lisible."""
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
+def _determine_target_format(
+    source_format: str,
+    do_resize: bool,
+    do_convert: bool,
+    convert_config: Optional[Dict[str, Any]],
+    do_compress: bool,
+    compress_config: Optional[Dict[str, Any]],
+) -> str:
+    if do_convert and convert_config:
+        return str(convert_config["format"]).upper()
+
+    normalized_compress = normalize_compress_config(compress_config)
+    if do_compress and str(normalized_compress.get("mode")) == "2" and normalized_compress.get("use_webp", False):
+        return "WEBP"
+
+    if do_resize:
+        # The standalone resizer also writes PNG. Keeping this behavior avoids
+        # alpha/transparency problems after letterbox resizing.
+        return "PNG"
+
+    return source_format
 
 
-def print_banner():
-    """Affiche le bandeau ASCII Art."""
-    banner = r"""
- ____            _ __  __           _            
-/ ___| _   _  __| |  \/  | __ _ ___| |_ ___ _ __ 
-\___ \| | | |/ _` | |\/| |/ _` / __| __/ _ \ '__|
- ___) | |_| | (_| | |  | | (_| \__ \ ||  __/ |   
-|____/ \__,_|\__,_|_|  |_|\__,_|___/\__\___|_|   
-    """
-    print(banner)
+def _build_final_output_path(
+    input_path: str,
+    output_dir: str,
+    output_format: str,
+    resize_dimensions: Optional[Tuple[int, int]],
+    do_compress: bool,
+    compress_config: Optional[Dict[str, Any]],
+) -> str:
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    ext = extension_for_format(output_format)
+
+    parts = [base_name]
+    if resize_dimensions is not None:
+        width, height = resize_dimensions
+        parts.append(f"{width}x{height}")
+    if do_compress:
+        parts.append(f"compress-{compression_mode_label(compress_config)}")
+
+    output_name = "_".join(parts) + ext
+    output_path = os.path.join(output_dir, output_name)
+    output_path = avoid_same_input_output(input_path, output_path, suffix="_final")
+    return make_unique_path(output_path)
 
 
-def get_target_files(paths):
-    """Collecte tous les fichiers images valides à partir des chemins fournis."""
-    target_files = []
-    for path in paths:
-        if os.path.isdir(path):
-            for root, dirs, files in os.walk(path):
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if not d.startswith((".", "__"))
-                    and d not in ("node_modules", "dist", "build")
-                ]
-                for f in files:
-                    if f.lower().endswith(VALID_EXTENSIONS):
-                        target_files.append(os.path.join(root, f))
-        elif os.path.isfile(path):
-            if path.lower().endswith(VALID_EXTENSIONS):
-                target_files.append(path)
-    return target_files
+def process_workflow_image(
+    input_path: str,
+    output_dir: str,
+    do_resize: bool,
+    resize_config: Optional[Dict[str, Any]],
+    do_convert: bool,
+    convert_config: Optional[Dict[str, Any]],
+    do_compress: bool,
+    compress_config: Optional[Dict[str, Any]],
+    global_info: Tuple[int, int] = (1, 1),
+    show_progress: bool = True,
+) -> Dict[str, Any]:
+    """Apply the complete workflow in memory and save only one final image."""
+    idx, total = global_info
+    original_size = os.path.getsize(input_path)
 
+    if show_progress:
+        render_progress(idx - 1, total, input_path, 5, 100, "Ouverture")
+        time.sleep(0.01)
 
-def render_progress(
-    global_idx, global_total, filename, step=0, total_steps=100, status=""
-):
-    """Barre de progression sur une seule ligne."""
-    try:
-        columns = shutil.get_terminal_size((80, 20)).columns
-    except:
-        columns = 80
+    with Image.open(input_path) as source_img:
+        source_format = source_save_format_from_image(source_img)
+        img = source_img.copy()
 
-    safety_margin = 15
-    available_width = columns - safety_margin
-    g_bar_len = 10
-    l_bar_len = 8
+    resize_dimensions: Optional[Tuple[int, int]] = None
 
-    g_filled = int(g_bar_len * global_idx // global_total) if global_total > 0 else 0
-    g_bar = "█" * g_filled + "░" * (g_bar_len - g_filled)
-    g_pct = (global_idx / global_total * 100) if global_total > 0 else 0
+    if do_resize:
+        if resize_config is None:
+            raise ValueError("Configuration de redimensionnement manquante.")
+        if show_progress:
+            render_progress(idx - 1, total, input_path, 35, 100, "Resize")
+            time.sleep(0.01)
+        img, target_w, target_h = resize_pil_image(img, resize_config)
+        resize_dimensions = (target_w, target_h)
 
-    l_filled = int(l_bar_len * step // total_steps)
-    l_bar = "━" * l_filled + " " * (l_bar_len - l_filled)
+    output_format = _determine_target_format(
+        source_format=source_format,
+        do_resize=do_resize,
+        do_convert=do_convert,
+        convert_config=convert_config,
+        do_compress=do_compress,
+        compress_config=compress_config,
+    )
 
-    fn = os.path.basename(filename)
-    txt_space = available_width - 45
-    if len(fn) > txt_space:
-        fn = fn[: max(5, txt_space - 3)] + "..."
+    output_path = _build_final_output_path(
+        input_path=input_path,
+        output_dir=output_dir,
+        output_format=output_format,
+        resize_dimensions=resize_dimensions,
+        do_compress=do_compress,
+        compress_config=compress_config,
+    )
 
-    line = f" G:[{g_bar}] {g_pct:>3.0f}% | {status:<10} | [{l_bar}] | {fn}"
-    sys.stdout.write("\r" + line.ljust(columns - 1))
-    sys.stdout.flush()
+    if show_progress:
+        render_progress(idx - 1, total, input_path, 60, 100, "Format")
+        time.sleep(0.01)
 
+    if do_compress:
+        if compress_config is None:
+            raise ValueError("Configuration de compression manquante.")
 
-# --- LOGIQUE DE REDIMENSIONNEMENT ---
-def resize_image(img, target_w, target_h, method):
-    if method == "1":  # Fill / Center Crop
-        src_w, src_h = img.size
-        src_ratio = src_w / src_h
-        target_ratio = target_w / target_h
-        if src_ratio > target_ratio:
-            new_h = target_h
-            new_w = int(src_w * (target_h / src_h))
-            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            left = (new_w - target_w) // 2
-            img = img.crop((left, 0, left + target_w, target_h))
-        else:
-            new_w = target_w
-            new_h = int(src_h * (target_w / src_w))
-            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            top = (new_h - target_h) // 2
-            img = img.crop((0, top, target_w, top + target_h))
-    elif method == "2":  # Fit / Letterbox
-        img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
-        new_img = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-        offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
-        new_img.paste(img, offset)
-        img = new_img
-    else:  # Stretch
-        img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-    return img
+        # In master mode we must always produce the single final workflow file.
+        # Therefore skip_if_larger is disabled only for this in-memory pipeline.
+        master_compress_config = normalize_compress_config(compress_config)
+        master_compress_config["skip_if_larger"] = False
 
+        if show_progress:
+            render_progress(idx - 1, total, input_path, 80, 100, "Compression")
+            time.sleep(0.01)
 
-def main():
-    print_banner()
-
-    # 1. Chemins
-    paths = []
-    if len(sys.argv) > 1:
-        paths = sys.argv[1:]
+        buffer = compress_pil_image_to_buffer(img, output_format, master_compress_config)
+        with open(output_path, "wb") as handle:
+            handle.write(buffer.getvalue())
     else:
-        path_input = (
-            input("📂 Glissez un dossier ou fichier à traiter : ").strip().strip('"')
-        )
-        if path_input:
-            paths = [path_input]
+        if show_progress:
+            render_progress(idx - 1, total, input_path, 80, 100, "Sauvegarde")
+            time.sleep(0.01)
 
+        prepared = prepare_image_for_format(img, output_format)
+        prepared.save(output_path, format=output_format, **save_params_for_format(output_format, prepared))
+
+    new_size = os.path.getsize(output_path)
+
+    if show_progress:
+        render_progress(idx, total, input_path, 100, 100, "Termine")
+
+    return {
+        "status": "success",
+        "input": input_path,
+        "output": output_path,
+        "original_size": original_size,
+        "new_size": new_size,
+        "format": output_format,
+        "resize_dimensions": resize_dimensions,
+    }
+
+
+def process_workflow_images(
+    files: List[str],
+    output_dir: str,
+    do_resize: bool,
+    resize_config: Optional[Dict[str, Any]],
+    do_convert: bool,
+    convert_config: Optional[Dict[str, Any]],
+    do_compress: bool,
+    compress_config: Optional[Dict[str, Any]],
+    show_progress: bool = True,
+) -> Dict[str, Any]:
+    os.makedirs(output_dir, exist_ok=True)
+    results: List[Dict[str, Any]] = []
+    output_files: List[str] = []
+    errors: List[Dict[str, str]] = []
+    total = len(files)
+
+    for idx, input_path in enumerate(files, 1):
+        try:
+            result = process_workflow_image(
+                input_path=input_path,
+                output_dir=output_dir,
+                do_resize=do_resize,
+                resize_config=resize_config,
+                do_convert=do_convert,
+                convert_config=convert_config,
+                do_compress=do_compress,
+                compress_config=compress_config,
+                global_info=(idx, total),
+                show_progress=show_progress,
+            )
+            results.append(result)
+            output_files.append(result["output"])
+        except Exception as exc:
+            errors.append({"file": input_path, "error": str(exc)})
+            print(f"\n[Erreur] Workflow impossible pour {input_path}: {exc}")
+
+    if show_progress:
+        print()
+
+    return {
+        "files": output_files,
+        "success_count": len(output_files),
+        "errors": errors,
+        "results": results,
+        "original_size": get_total_size(files),
+        "final_size": get_total_size(output_files),
+    }
+
+
+def main() -> None:
+    configure_console()
+    print_banner("master")
+
+    paths = sys.argv[1:] if len(sys.argv) > 1 else ask_input_paths("Chemin image ou dossier : ")
     if not paths:
-        print("❌ Aucun chemin spécifié.")
+        print("[Erreur] Aucun chemin specifie.")
         sys.exit(0)
 
     files = get_target_files(paths)
     if not files:
-        print("❌ Aucun fichier image valide trouvé.")
+        print("[Erreur] Aucune image valide trouvee.")
+        sys.exit(1)
+
+    image_infos = get_image_infos(files)
+    if not image_infos:
+        print("[Erreur] Aucune image lisible trouvee.")
+        sys.exit(1)
+
+    print(f"{len(image_infos)} image(s) detectee(s).")
+    print_image_table(image_infos)
+
+    print("\n--- CONFIGURATION DU WORKFLOW ---")
+    print("Le master produit une seule image finale par image source.")
+    print("Ordre du pipeline : redimensionnement -> conversion -> compression -> sauvegarde finale.")
+
+    do_resize = ask_yes_no("Redimensionner ? (o/N) : ", default=False)
+    do_convert = ask_yes_no("Convertir le format ? (o/N) : ", default=False)
+    do_compress = ask_yes_no("Compresser ? (o/N) : ", default=False)
+
+    if not any((do_resize, do_convert, do_compress)):
+        print("Aucune operation selectionnee. Fin du programme.")
         sys.exit(0)
-
-    print(f"✅ {len(files)} images détectées.")
-
-    # 2. Choix des opérations
-    print("\n--- 🛠️ CONFIGURATION DU WORKFLOW ---")
-    print("Quelles opérations voulez-vous effectuer ?")
-    do_resize = input("📏 Redimensionner ? (o/N) : ").strip().lower() == "o"
-    do_convert = input("🔄 Convertir le format ? (o/N) : ").strip().lower() == "o"
-    do_compress = input("🗜️ Compresser ? (o/N) : ").strip().lower() == "o"
-
-    if not any([do_resize, do_convert, do_compress]):
-        print("⚠️ Aucune opération sélectionnée. Fin du programme.")
-        sys.exit(0)
-
-    # Config Resize
-    resize_config = {}
-    if do_resize:
-        print("\n--- 📏 CONFIGURATION REDIMENSIONNEMENT ---")
-        try:
-            resize_config["w"] = int(input("Largeur cible : ").strip())
-            resize_config["h"] = int(input("Hauteur cible : ").strip())
-            print("Méthodes :")
-            for k, v in RESIZE_METHODS.items():
-                print(f"  {k}. {v}")
-            resize_config["method"] = input("Méthode (par défaut 1) : ").strip() or "1"
-        except ValueError:
-            print("❌ Dimensions invalides.")
-            sys.exit(1)
-
-    # Config Convert
-    convert_config = {}
-    if do_convert:
-        print("\n--- 🔄 CONFIGURATION CONVERSION ---")
-        for k, v in SUPPORTED_OUTPUT_FORMATS.items():
-            print(f"  {k}. {v[0]}")
-        choix = input("Format cible (numéro) : ").strip()
-        if choix in SUPPORTED_OUTPUT_FORMATS:
-            convert_config["format"], convert_config["ext"] = SUPPORTED_OUTPUT_FORMATS[
-                choix
-            ]
-        else:
-            print("❌ Format invalide.")
-            sys.exit(1)
-
-    # Config Compress
-    compress_config = {}
-    if do_compress:
-        print("\n--- 🗜️ CONFIGURATION COMPRESSION ---")
-        print("1. SANS PERTE (Optimisation)")
-        print("2. AVEC PERTE (Réduction qualité)")
-        mode = input("Mode (1 ou 2) : ").strip()
-        compress_config["mode"] = mode
-        if mode == "2":
-            compress_config["quality"] = int(
-                input("Qualité (1-100, ex: 75) : ").strip() or "75"
-            )
-
-    # 3. Dossier de sortie
-    is_single_file = len(files) == 1
-    if is_single_file:
-        output_dir = os.path.dirname(os.path.abspath(files[0]))
-    else:
-        default_out = "output_processed"
-        if os.path.isdir(paths[0]):
-            default_out = paths[0].rstrip("/\\") + "_MASTER"
-
-        output_dir = (
-            input(f"\n📂 Dossier de sortie (par défaut: {default_out}) : ").strip()
-            or default_out
-        )
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-    # 4. Traitement
-    print("\n--- 🚀 TRAITEMENT EN COURS ---")
-    start_time = time.time()
-    success_count = 0
-    total_orig_size = 0
-    total_final_size = 0
 
     try:
-        for i, f_path in enumerate(files, 1):
-            try:
-                orig_size = os.path.getsize(f_path)
-                total_orig_size += orig_size
+        resize_config = ask_resize_config() if do_resize else None
+        convert_config = ask_convert_config() if do_convert else None
+        # If conversion is already selected, the target extension must stay the
+        # explicit conversion choice. We therefore do not ask the compressor to
+        # convert to WebP in that case.
+        compress_config = ask_compress_config(allow_webp_choice=not do_convert) if do_compress else None
+    except ValueError as exc:
+        print(f"[Erreur] {exc}")
+        sys.exit(1)
 
-                # Image processing steps
-                render_progress(i - 1, len(files), f_path, 0, 100, "Ouverture")
-                img = Image.open(f_path)
+    output_dir = ask_output_dir(
+        paths=paths,
+        files=files,
+        default_folder_name="output_processed",
+        batch_suffix="_MASTER",
+    )
 
-                # Step 1: Resize
-                if do_resize:
-                    render_progress(i - 1, len(files), f_path, 30, 100, "Resize")
-                    img = resize_image(
-                        img,
-                        resize_config["w"],
-                        resize_config["h"],
-                        resize_config["method"],
-                    )
+    print("\n--- RECAPITULATIF ---")
+    print(f"Images source : {len(files)}")
+    print(f"Sortie        : {output_dir}")
+    print(f"Resize        : {'oui - ' + format_dimension_mode(resize_config) if resize_config else 'non'}")
+    print(f"Conversion    : {'oui - ' + convert_config['format'] if convert_config else 'non'}")
+    print(f"Compression   : {'oui - compress-' + compression_mode_label(compress_config) if compress_config else 'non'}")
+    print("Nom final     : [nom]_[LxH]_compress-[mode].[extension] si resize + compression")
 
-                # Step 2 & 3: Convert & Compress (determined during save)
-                render_progress(i - 1, len(files), f_path, 70, 100, "Optimisation")
+    if not ask_yes_no("Lancer le workflow ? (O/n) : ", default=True):
+        print("Operation annulee.")
+        sys.exit(0)
 
-                # Determine Format
-                save_fmt = img.format if img.format else "PNG"
-                ext = os.path.splitext(f_path)[1]
+    start_time = time.time()
 
-                if do_convert:
-                    save_fmt = convert_config["format"]
-                    ext = convert_config["ext"]
-
-                # Handling JPEG transparency
-                if save_fmt == "JPEG" and img.mode in ("RGBA", "P", "LA"):
-                    img = img.convert("RGB")
-
-                # Prepare save params
-                save_params = {"optimize": True}
-                if do_compress:
-                    if compress_config["mode"] == "1":  # Lossless
-                        if save_fmt == "WEBP":
-                            save_params["lossless"] = True
-                        if save_fmt == "JPEG":
-                            save_params["quality"] = "keep"
-                    else:  # Lossy
-                        save_params["quality"] = compress_config.get("quality", 75)
-
-                # Output path
-                base_name = os.path.splitext(os.path.basename(f_path))[0]
-
-                suffix = ""
-                if is_single_file:
-                    if do_resize:
-                        suffix += f"_{resize_config['w']}x{resize_config['h']}"
-                    if do_compress:
-                        suffix += "_min"
-                    if not suffix and not do_convert:
-                        suffix = "_new"
-
-                out_path = os.path.join(output_dir, f"{base_name}{suffix}{ext}")
-
-                # Avoid collision if output is same as input
-                if os.path.abspath(out_path) == os.path.abspath(f_path):
-                    out_path = os.path.join(output_dir, f"{base_name}_final{ext}")
-
-                img.save(out_path, format=save_fmt, **save_params)
-
-                total_final_size += os.path.getsize(out_path)
-                success_count += 1
-                render_progress(i, len(files), f_path, 100, 100, "Terminé")
-
-            except Exception as e:
-                print(f"\n❌ Erreur sur {os.path.basename(f_path)}: {e}")
-
-    except KeyboardInterrupt:
-        print("\n\n⚠️ Interruption utilisateur.")
-
-    # 5. Bilan
-    duration = time.time() - start_time
-    print("\n\n" + "=" * 45)
-    print("📊 BILAN FINAL")
-    print("=" * 45)
-    print(f"✅ Images traitées : {success_count}/{len(files)}")
-    print(f"⏱️ Temps écoulé    : {duration:.2f} secondes")
-    print(f"📦 Taille initiale : {format_size(total_orig_size)}")
-    print(f"📦 Taille finale   : {format_size(total_final_size)}")
-
-    diff = total_final_size - total_orig_size
-    if diff < 0:
-        print(
-            f"📉 Gain d'espace   : {format_size(abs(diff))} ({abs(diff)/total_orig_size*100:.1f}%)"
+    try:
+        result = process_workflow_images(
+            files=files,
+            output_dir=output_dir,
+            do_resize=do_resize,
+            resize_config=resize_config,
+            do_convert=do_convert,
+            convert_config=convert_config,
+            do_compress=do_compress,
+            compress_config=compress_config,
+            show_progress=True,
         )
-    else:
-        print(f"📈 Augmentation    : {format_size(diff)}")
-    print(f"📂 Sortie          : {output_dir}")
+    except KeyboardInterrupt:
+        print("\nInterruption utilisateur.")
+        sys.exit(1)
+
+    duration = time.time() - start_time
+    diff = result["final_size"] - result["original_size"]
+
+    print("\n" + "=" * 45)
+    print("BILAN FINAL")
     print("=" * 45)
-    print("🚀 SudSuite - Travail terminé !")
+    print(f"Images traitees : {result['success_count']}/{len(files)}")
+    print(f"Temps ecoule    : {duration:.2f} secondes")
+    print(f"Taille initiale : {format_size(result['original_size'])}")
+    print(f"Taille finale   : {format_size(result['final_size'])}")
+
+    if diff < 0:
+        percent = abs(diff) / result["original_size"] * 100 if result["original_size"] else 0
+        print(f"Gain d'espace   : {format_size(abs(diff))} ({percent:.1f}%)")
+    else:
+        print(f"Augmentation    : {format_size(diff)}")
+
+    if result["errors"]:
+        print("\nErreurs :")
+        for error in result["errors"]:
+            print(f"- {error['file']}: {error['error']}")
+
+    print(f"Sortie          : {output_dir}")
+    print("=" * 45)
+    print("SudSuite - Travail termine.")
 
 
 if __name__ == "__main__":

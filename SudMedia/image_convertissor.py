@@ -1,28 +1,25 @@
 import os
 import sys
 import time
-import io
-import shutil
-from datetime import datetime
+from typing import Any, Dict, List, Tuple
 
-# --- COMPATIBILITÉ WINDOWS ---
-if sys.platform == "win32":
-    os.system("")  # Active le support des codes ANSI/VT100
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except AttributeError:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+from PIL import Image
 
-try:
-    from PIL import Image
-except ImportError:
-    print("❌ La bibliothèque 'Pillow' n'est pas installée.")
-    print("Veuillez l'installer avec la commande suivante :")
-    print("   pip install Pillow")
-    sys.exit(1)
+from image_common import (
+    ask_input_paths,
+    ask_output_dir,
+    ask_yes_no,
+    avoid_same_input_output,
+    configure_console,
+    format_size,
+    get_image_infos,
+    get_target_files,
+    get_total_size,
+    print_banner,
+    print_image_table,
+    render_progress,
+)
 
-# --- CONFIGURATION & CONSTANTES ---
-VALID_EXTENSIONS = (".png", ".jpeg", ".jpg", ".webp", ".bmp", ".tiff", ".gif")
 SUPPORTED_OUTPUT_FORMATS = {
     "1": ("PNG", ".png"),
     "2": ("JPEG", ".jpg"),
@@ -33,257 +30,227 @@ SUPPORTED_OUTPUT_FORMATS = {
 }
 
 
-# --- UTILITAIRES ---
-def format_size(size_in_bytes):
-    """Formate une taille en octets vers une unité lisible."""
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
+def ask_convert_config() -> Dict[str, str]:
+    print("\n--- CONFIGURATION CONVERSION ---")
+    for key, (fmt, _) in SUPPORTED_OUTPUT_FORMATS.items():
+        print(f"  {key}. {fmt}")
+
+    choice = input("Format cible (numero) : ").strip()
+    if choice not in SUPPORTED_OUTPUT_FORMATS:
+        raise ValueError("Format cible invalide.")
+
+    target_format, target_ext = SUPPORTED_OUTPUT_FORMATS[choice]
+    return {"format": target_format, "ext": target_ext}
 
 
-def print_banner():
-    """Affiche le bandeau ASCII Art."""
-    banner = r"""
- ____            _  ____                          _   _                    
-/ ___| _   _  __| |/ ___|___  _ ____   _____ _ __| |_(_)___ ___  ___  _ __ 
-\___ \| | | |/ _` | |   / _ \| '_ \ \ / / _ \ '__| __| / __/ __|/ _ \| '__|
- ___) | |_| | (_| | |__| (_) | | | \ V /  __/ |  | |_| \__ \__ \ (_) | |   
-|____/ \__,_|\__,_|\____\___/|_| |_|\_/ \___|_|   \__|_|___/___/\___/|_|   
-    """
-    print(banner)
+def image_has_alpha(img: Image.Image) -> bool:
+    return img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
 
 
-def get_target_files(paths):
-    """Collecte tous les fichiers images valides à partir des chemins fournis."""
-    target_files = []
-    for path in paths:
-        if os.path.isdir(path):
-            for root, dirs, files in os.walk(path):
-                # Smart Filtering: ignorer les dossiers cachés ou système
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if not d.startswith((".", "__"))
-                    and d not in ("node_modules", "dist", "build")
-                ]
-                for f in files:
-                    if f.lower().endswith(VALID_EXTENSIONS):
-                        target_files.append(os.path.join(root, f))
-        elif os.path.isfile(path):
-            if path.lower().endswith(VALID_EXTENSIONS):
-                target_files.append(path)
-            else:
-                print(
-                    f"⚠️  Le fichier {os.path.basename(path)} n'est pas une image supportée."
-                )
-        else:
-            print(f"❌ {path} n'est ni un fichier ni un dossier valide.")
-    return target_files
+def flatten_transparency_on_white(img: Image.Image) -> Image.Image:
+    if image_has_alpha(img):
+        rgba = img.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        background.alpha_composite(rgba)
+        return background.convert("RGB")
+    if img.mode != "RGB":
+        return img.convert("RGB")
+    return img
 
 
-def render_progress(global_idx, global_total, filename, step=0, total_steps=100):
-    """
-    Affiche une barre de progression robuste sur une seule ligne.
-    """
-    try:
-        columns = shutil.get_terminal_size((80, 20)).columns
-    except:
-        columns = 80
+def prepare_image_for_format(img: Image.Image, target_format: str) -> Image.Image:
+    target_format = str(target_format).upper()
 
-    # Marge de sécurité pour éviter le wrapping (critique pour \r)
-    # Les emojis comptent pour 1 en python mais 2 colonnes en visuel
-    safety_margin = 15
-    available_width = columns - safety_margin
+    if target_format in ("JPEG", "BMP"):
+        return flatten_transparency_on_white(img)
 
-    # Proportion des barres (plus petites pour la stabilité)
-    g_bar_len = 10
-    l_bar_len = 10
+    if target_format == "GIF":
+        if img.mode == "P":
+            return img
+        if image_has_alpha(img):
+            return img.convert("RGBA").convert("P", palette=Image.Palette.ADAPTIVE)
+        return img.convert("P", palette=Image.Palette.ADAPTIVE)
 
-    # Barre Globale
-    g_filled = int(g_bar_len * global_idx // global_total)
-    g_bar = "█" * g_filled + "░" * (g_bar_len - g_filled)
-    g_pct = (global_idx / global_total) * 100
+    if target_format in ("PNG", "WEBP", "TIFF"):
+        if img.mode == "P" and "transparency" in img.info:
+            return img.convert("RGBA")
+        return img
 
-    # Barre Locale
-    l_filled = int(l_bar_len * step // total_steps)
-    l_bar = "━" * l_filled + " " * (l_bar_len - l_filled)
-
-    # Nom de fichier tronqué
-    fn = os.path.basename(filename)
-    # Calcul de l'espace pour le texte (on enlève les barres et préfixes)
-    # "G:[###] 100% | L:[###] | " ~ 30 chars
-    txt_space = available_width - 35
-    if len(fn) > txt_space:
-        fn = fn[: max(5, txt_space - 3)] + "..."
-
-    # Ligne finale
-    # On n'utilise pas d'emojis complexes ici pour garantir la largeur
-    line = f" G:[{g_bar}] {g_pct:>3.0f}% ({global_idx}/{global_total}) | D:[{l_bar}] | {fn}"
-
-    # Écriture propre
-    sys.stdout.write("\r" + line.ljust(columns - 1))
-    sys.stdout.flush()
+    return img
 
 
-def convert_image(
-    input_path, target_format, target_ext, output_dir, silent=False, global_info=(0, 0)
-):
-    """Convertit une image unique ou l'ignore si elle existe déjà."""
+def save_params_for_format(target_format: str, img: Image.Image) -> Dict[str, Any]:
+    target_format = str(target_format).upper()
+
+    if target_format == "WEBP":
+        method = 0 if image_has_alpha(img) else 6
+        return {"lossless": True, "quality": 100, "method": method}
+    if target_format == "JPEG":
+        return {"quality": 100, "subsampling": 0, "optimize": True}
+    if target_format == "PNG":
+        return {"optimize": True}
+    if target_format == "TIFF":
+        return {"compression": "tiff_lzw"}
+    if target_format == "GIF":
+        return {"optimize": True}
+    return {}
+
+
+def convert_pil_image(img: Image.Image, config: Dict[str, str]) -> Tuple[Image.Image, str, str]:
+    """Convert an opened PIL image without writing it. Used by image_master."""
+    target_format = config["format"]
+    target_ext = config["ext"]
+    return prepare_image_for_format(img, target_format), target_format, target_ext
+
+
+def convert_one_image(
+    input_path: str,
+    output_dir: str,
+    config: Dict[str, str],
+    global_info: Tuple[int, int] = (1, 1),
+    show_progress: bool = True,
+) -> Dict[str, Any]:
     idx, total = global_info
-    try:
-        start_time = time.time()
-        original_size = os.path.getsize(input_path)
+    target_format = config["format"]
+    target_ext = config["ext"]
 
-        # Nom de fichier prévisible sans horodatage pour permettre l'idempotence
-        base_name = os.path.splitext(os.path.basename(input_path))[0]
-        output_filename = f"{base_name}{target_ext}"
-        output_path = os.path.join(output_dir, output_filename)
+    original_size = os.path.getsize(input_path)
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    output_path = os.path.join(output_dir, f"{base_name}{target_ext}")
+    output_path = avoid_same_input_output(input_path, output_path, suffix="_converted")
 
-        # Vérification si déjà fait
-        if os.path.exists(output_path):
-            render_progress(idx, total, input_path, step=100, total_steps=100)
-            return "skipped", 0, 0
+    if os.path.exists(output_path):
+        if show_progress:
+            render_progress(idx, total, input_path, 100, 100, "Ignore")
+        return {
+            "status": "skipped_existing",
+            "input": input_path,
+            "output": output_path,
+            "original_size": original_size,
+            "new_size": os.path.getsize(output_path),
+        }
 
-        # Simulation de la progression par image
-        for s in range(0, 101, 20):
-            render_progress(idx - 1, total, input_path, step=s, total_steps=100)
-            time.sleep(0.01)
+    if show_progress:
+        render_progress(idx - 1, total, input_path, 20, 100, "Ouverture")
+        time.sleep(0.01)
 
-        img = Image.open(input_path)
+    with Image.open(input_path) as source_img:
+        img = source_img.copy()
 
-        # Gestion de la transparence
-        if target_format == "JPEG" and img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
-        elif img.mode == "P" and target_format != "GIF":
-            img = img.convert("RGBA" if "transparency" in img.info else "RGB")
+    if show_progress:
+        render_progress(idx - 1, total, input_path, 60, 100, "Conversion")
+        time.sleep(0.01)
 
-        # Sauvegarde
-        save_params = {}
-        if target_format == "WEBP":
-            save_params = {"lossless": True, "quality": 100}
-        elif target_format == "JPEG":
-            save_params = {"quality": 100, "subsampling": 0}
-        elif target_format == "PNG":
-            save_params = {"optimize": True}
+    img = prepare_image_for_format(img, target_format)
+    img.save(output_path, format=target_format, **save_params_for_format(target_format, img))
 
-        img.save(output_path, format=target_format, **save_params)
+    new_size = os.path.getsize(output_path)
 
-        render_progress(idx, total, input_path, step=100, total_steps=100)
+    if show_progress:
+        render_progress(idx, total, input_path, 100, 100, "Termine")
 
-        new_size = os.path.getsize(output_path)
-        return True, original_size, new_size
-    except Exception as e:
-        if not silent:
-            print(f"\n❌ Erreur lors de la conversion de {input_path}: {e}")
-        return False, 0, 0
+    return {
+        "status": "success",
+        "input": input_path,
+        "output": output_path,
+        "original_size": original_size,
+        "new_size": new_size,
+    }
 
 
-def main():
-    print_banner()
-
-    if len(sys.argv) < 2:
-        print(
-            "📂 Utilisation : python image_convertissor.py <image_ou_dossier_1> [image_ou_dossier_2] ..."
-        )
-        sys.exit(0)
-
-    # 1. Collecte des fichiers
-    print("🔍 Analyse des fichiers...")
-    files = get_target_files(sys.argv[1:])
-
-    if not files:
-        print("❌ Aucun fichier image trouvé.")
-        sys.exit(1)
-
-    print(f"🚀 {len(files)} images détectées.")
-
-    # 2. Sélection du format cible
-    print("\n--- 🎯 SÉLECTION DU FORMAT CIBLE ---")
-    for k, v in SUPPORTED_OUTPUT_FORMATS.items():
-        print(f"{k}. {v[0]}")
-
-    choix = input("\nChoisissez le format cible (numéro) : ").strip()
-    if choix not in SUPPORTED_OUTPUT_FORMATS:
-        print("❌ Choix invalide.")
-        sys.exit(1)
-
-    target_format, target_ext = SUPPORTED_OUTPUT_FORMATS[choix]
-
-    # 3. Détermination du dossier de sortie
-    first_arg = sys.argv[1]
-    if os.path.isdir(first_arg):
-        output_dir = first_arg.rstrip("/\\") + "_convert"
-    else:
-        output_dir = os.path.join(
-            os.path.dirname(os.path.abspath(first_arg)), "converted"
-        )
-
-    # 4. Confirmation
-    print(f"\n📂 Dossier de sortie : {output_dir}")
-    confirm = (
-        input(
-            f"⚠️  Les images seront converties en {target_format}. Continuer ? (O/n) : "
-        )
-        .strip()
-        .lower()
-    )
-    if confirm == "n":
-        print("🚫 Opération annulée.")
-        sys.exit(0)
-
-    # Création du dossier si besoin
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # 5. Traitement
-    print("\n--- ⚙️ TRAITEMENT EN COURS ---")
+def convert_images(
+    files: List[str],
+    output_dir: str,
+    config: Dict[str, str],
+    show_progress: bool = True,
+) -> Dict[str, Any]:
+    os.makedirs(output_dir, exist_ok=True)
+    output_files: List[str] = []
+    results: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
     success_count = 0
     skipped_count = 0
-    total_original_size = 0
-    total_new_size = 0
-    total_files = len(files)
+    total = len(files)
+
+    for idx, input_path in enumerate(files, 1):
+        try:
+            result = convert_one_image(
+                input_path,
+                output_dir,
+                config,
+                global_info=(idx, total),
+                show_progress=show_progress,
+            )
+            results.append(result)
+            output_files.append(result["output"])
+            if result["status"] == "success":
+                success_count += 1
+            else:
+                skipped_count += 1
+        except Exception as exc:
+            errors.append({"file": input_path, "error": str(exc)})
+            print(f"\n[Erreur] Conversion impossible pour {input_path}: {exc}")
+
+    if show_progress:
+        print()
+
+    return {
+        "files": output_files,
+        "success_count": success_count,
+        "skipped_count": skipped_count,
+        "errors": errors,
+        "results": results,
+        "original_size": get_total_size(files),
+        "final_size": get_total_size(output_files),
+    }
+
+
+def main() -> None:
+    configure_console()
+    print_banner("convertissor")
+
+    paths = sys.argv[1:] if len(sys.argv) > 1 else ask_input_paths("Chemin image ou dossier : ")
+    if not paths:
+        print("[Erreur] Aucun chemin specifie.")
+        sys.exit(0)
+
+    files = get_target_files(paths)
+    if not files:
+        print("[Erreur] Aucune image valide trouvee.")
+        sys.exit(1)
+
+    image_infos = get_image_infos(files)
+    print(f"{len(image_infos)} image(s) detectee(s).")
+    print_image_table(image_infos)
 
     try:
-        for i, f in enumerate(files, 1):
-            res = convert_image(
-                f,
-                target_format,
-                target_ext,
-                output_dir,
-                silent=True,
-                global_info=(i, total_files),
-            )
-            if res == "skipped":
-                skipped_count += 1
-            elif res[0] is True:
-                success_count += 1
-                total_original_size += res[1]
-                total_new_size += res[2]
+        config = ask_convert_config()
+    except ValueError as exc:
+        print(f"[Erreur] {exc}")
+        sys.exit(1)
 
-        # On saute une ligne après les barres de chargement
-        print()
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Interruption par l'utilisateur. Arrêt du traitement...")
+    output_dir = ask_output_dir(paths, files, default_folder_name="converted", batch_suffix="_convert")
+    print(f"Sortie : {output_dir}")
 
-    # 6. Bilan
-    print("\n" + "=" * 40)
-    print("📊 BILAN DE L'OPÉRATION")
-    print("=" * 40)
-    print(f"✅ Images traitées avec succès : {success_count}/{total_files}")
-    if skipped_count > 0:
-        print(f"⏩ Images déjà présentes (ignorées) : {skipped_count}")
-    print(f"📦 Taille totale originale     : {format_size(total_original_size)}")
-    print(f"📦 Taille totale convertie      : {format_size(total_new_size)}")
+    if not ask_yes_no(f"Convertir {len(files)} image(s) en {config['format']} ? (O/n) : ", default=True):
+        print("Operation annulee.")
+        sys.exit(0)
 
-    variation = total_new_size - total_original_size
-    if variation > 0:
-        print(f"📈 Augmentation de taille      : {format_size(variation)}")
-    else:
-        print(f"📉 Gain d'espace               : {format_size(abs(variation))}")
-    print("=" * 40)
-    print("🚀 Travail terminé !")
+    start_time = time.time()
+    result = convert_images(files, output_dir, config, show_progress=True)
+    duration = time.time() - start_time
+
+    print("\n" + "=" * 45)
+    print("BILAN CONVERSION")
+    print("=" * 45)
+    print(f"Images converties : {result['success_count']}/{len(files)}")
+    if result["skipped_count"]:
+        print(f"Images ignorees   : {result['skipped_count']}")
+    print(f"Temps ecoule      : {duration:.2f} secondes")
+    print(f"Taille initiale   : {format_size(result['original_size'])}")
+    print(f"Taille finale     : {format_size(result['final_size'])}")
+    print(f"Sortie            : {output_dir}")
+    print("=" * 45)
 
 
 if __name__ == "__main__":

@@ -1,328 +1,336 @@
 import os
 import sys
 import time
-import io
-import shutil
-from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-# --- COMPATIBILITÉ WINDOWS ---
-if sys.platform == "win32":
-    os.system("")  # Active le support des codes ANSI/VT100
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except AttributeError:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+from PIL import Image
+from image_common import (
+    ask_input_paths,
+    ask_output_dir,
+    ask_yes_no,
+    configure_console,
+    format_size,
+    get_image_infos,
+    get_target_files,
+    get_total_size,
+    make_unique_path,
+    print_banner,
+    print_image_table,
+    render_progress,
+)
 
 try:
-    from PIL import Image
-except ImportError:
-    print("❌ La bibliothèque 'Pillow' n'est pas installée.")
-    print("Veuillez l'installer avec la commande suivante :")
-    print("   pip install Pillow")
-    sys.exit(1)
+    RESAMPLE = Image.Resampling.LANCZOS
+except AttributeError:
+    RESAMPLE = Image.LANCZOS
 
-# --- CONFIGURATION & CONSTANTES ---
-VALID_EXTENSIONS = (".png", ".jpeg", ".jpg", ".webp", ".bmp", ".tiff")
 RESIZE_METHODS = {
-    "1": "Remplissage (Recadrage centré)",
-    "2": "Adaptation (Bandes noires/transparentes)",
-    "3": "Étirage (Peut déformer l'image)",
+    "1": "Remplissage (recadrage centre)",
+    "2": "Adaptation (bandes transparentes)",
+    "3": "Etirage (deformation possible)",
 }
 
 
-# --- UTILITAIRES ---
-def format_size(size_in_bytes):
-    """Formate une taille en octets vers une unité lisible."""
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
-
-
-def print_banner():
-    """Affiche le bandeau ASCII Art."""
-    banner = r"""
- ____            _ ____           _              
-/ ___| _   _  __| |  _ \ ___  ___(_)_______ _ __ 
-\___ \| | | |/ _` | |_) / _ \/ __| |_  / _ \ '__|
- ___) | |_| | (_| |  _ <  __/\__ \ |/ /  __/ |   
-|____/ \__,_|\__,_|_| \_\___||___/_/___\___|_|   
-    """
-    print(banner)
-
-
-def get_target_files(paths):
-    """Collecte tous les fichiers images valides à partir des chemins fournis."""
-    target_files = []
-    for path in paths:
-        if os.path.isdir(path):
-            for root, dirs, files in os.walk(path):
-                # Smart Filtering
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if not d.startswith((".", "__"))
-                    and d not in ("node_modules", "dist", "build")
-                ]
-                for f in files:
-                    if f.lower().endswith(VALID_EXTENSIONS):
-                        target_files.append(os.path.join(root, f))
-        elif os.path.isfile(path):
-            if path.lower().endswith(VALID_EXTENSIONS):
-                target_files.append(path)
-    return target_files
-
-
-def render_progress(global_idx, global_total, filename, step=0, total_steps=100):
-    """Affiche une barre de progression."""
+def parse_positive_int(value: str, label: str) -> int:
     try:
-        columns = shutil.get_terminal_size((80, 20)).columns
-    except:
-        columns = 80
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{label} invalide : entrez un entier positif ou x.") from exc
 
-    safety_margin = 15
-    available_width = columns - safety_margin
-    g_bar_len = 10
-    l_bar_len = 10
+    if parsed <= 0:
+        raise ValueError(f"{label} invalide : la valeur doit etre superieure a 0.")
 
-    g_filled = int(g_bar_len * global_idx // global_total) if global_total > 0 else 0
-    g_bar = "█" * g_filled + "░" * (g_bar_len - g_filled)
-    g_pct = (global_idx / global_total * 100) if global_total > 0 else 0
-
-    l_filled = int(l_bar_len * step // total_steps)
-    l_bar = "━" * l_filled + " " * (l_bar_len - l_filled)
-
-    fn = os.path.basename(filename)
-    txt_space = available_width - 35
-    if len(fn) > txt_space:
-        fn = fn[: max(5, txt_space - 3)] + "..."
-
-    line = f" G:[{g_bar}] {g_pct:>3.0f}% ({global_idx}/{global_total}) | D:[{l_bar}] | {fn}"
-    sys.stdout.write("\r" + line.ljust(columns - 1))
-    sys.stdout.flush()
+    return parsed
 
 
-# --- LOGIQUE DE REDIMENSIONNEMENT ---
-def resize_image_fill(img, target_w, target_h):
-    """Redimensionne et recadre l'image pour remplir les dimensions cibles (Center Crop)."""
+def parse_dimension_inputs(w_input: str, h_input: str) -> Tuple[Optional[int], Optional[int], bool, bool]:
+    w_raw = w_input.strip().lower()
+    h_raw = h_input.strip().lower()
+
+    if not w_raw or not h_raw:
+        raise ValueError("Largeur et hauteur sont obligatoires.")
+
+    width_auto = w_raw == "x"
+    height_auto = h_raw == "x"
+
+    if width_auto and height_auto:
+        raise ValueError("Largeur et hauteur ne peuvent pas toutes les deux valoir x.")
+
+    target_w = None if width_auto else parse_positive_int(w_raw, "Largeur")
+    target_h = None if height_auto else parse_positive_int(h_raw, "Hauteur")
+
+    return target_w, target_h, width_auto, height_auto
+
+
+def resolve_target_dimensions(
+    src_w: int,
+    src_h: int,
+    target_w: Optional[int],
+    target_h: Optional[int],
+    width_auto: bool,
+    height_auto: bool,
+) -> Tuple[int, int]:
+    if src_w <= 0 or src_h <= 0:
+        raise ValueError("Dimensions source invalides.")
+
+    if width_auto:
+        if target_h is None:
+            raise ValueError("Hauteur manquante pour calculer la largeur automatique.")
+        resolved_w = int(round(target_h * src_w / src_h))
+        resolved_h = target_h
+    elif height_auto:
+        if target_w is None:
+            raise ValueError("Largeur manquante pour calculer la hauteur automatique.")
+        resolved_w = target_w
+        resolved_h = int(round(target_w * src_h / src_w))
+    else:
+        if target_w is None or target_h is None:
+            raise ValueError("Dimensions cibles incompletes.")
+        resolved_w = target_w
+        resolved_h = target_h
+
+    return max(1, resolved_w), max(1, resolved_h)
+
+
+def format_dimension_mode(config: Dict[str, Any]) -> str:
+    w_label = "auto" if config.get("width_auto") else str(config.get("target_w"))
+    h_label = "auto" if config.get("height_auto") else str(config.get("target_h"))
+    return f"{w_label}x{h_label}"
+
+
+def ask_resize_config() -> Dict[str, Any]:
+    print("\n--- CONFIGURATION REDIMENSIONNEMENT ---")
+    print("Utilisez x pour calculer automatiquement une dimension.")
+    print("Exemples : largeur 800 + hauteur x, ou largeur x + hauteur 500.")
+
+    w_input = input("Largeur cible : ").strip()
+    h_input = input("Hauteur cible : ").strip()
+    target_w, target_h, width_auto, height_auto = parse_dimension_inputs(w_input, h_input)
+
+    print("\nMethodes :")
+    for key, label in RESIZE_METHODS.items():
+        print(f"  {key}. {label}")
+
+    method = input("Methode (defaut 1) : ").strip() or "1"
+    if method not in RESIZE_METHODS:
+        print("[Alerte] Methode invalide, utilisation de 1.")
+        method = "1"
+
+    config = {
+        "target_w": target_w,
+        "target_h": target_h,
+        "width_auto": width_auto,
+        "height_auto": height_auto,
+        "method": method,
+    }
+
+    print(f"Mode dimensions : {format_dimension_mode(config)}")
+    if width_auto or height_auto:
+        print("La valeur automatique sera calculee image par image.")
+
+    return config
+
+
+def _prepare_image_for_png(img: Image.Image) -> Image.Image:
+    if img.mode in ("RGB", "RGBA"):
+        return img
+    if img.mode == "P" and "transparency" in img.info:
+        return img.convert("RGBA")
+    if "A" in img.mode:
+        return img.convert("RGBA")
+    return img.convert("RGB")
+
+
+def resize_image_fill(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
     src_w, src_h = img.size
     src_ratio = src_w / src_h
     target_ratio = target_w / target_h
 
     if src_ratio > target_ratio:
-        # Source plus large que cible -> Redimensionner sur la hauteur
         new_h = target_h
-        new_w = int(src_w * (target_h / src_h))
-        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        # Recadrage central horizontal
+        new_w = int(round(src_w * (target_h / src_h)))
+        resized = img.resize((new_w, new_h), RESAMPLE)
         left = (new_w - target_w) // 2
-        img = img.crop((left, 0, left + target_w, target_h))
-    else:
-        # Source plus haute que cible -> Redimensionner sur la largeur
-        new_w = target_w
-        new_h = int(src_h * (target_w / src_w))
-        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        # Recadrage central vertical
-        top = (new_h - target_h) // 2
-        img = img.crop((0, top, target_w, top + target_h))
+        return resized.crop((left, 0, left + target_w, target_h))
 
-    return img
+    new_w = target_w
+    new_h = int(round(src_h * (target_w / src_w)))
+    resized = img.resize((new_w, new_h), RESAMPLE)
+    top = (new_h - target_h) // 2
+    return resized.crop((0, top, target_w, top + target_h))
 
 
-def resize_image_fit(img, target_w, target_h):
-    """Redimensionne l'image pour qu'elle tienne dans les dimensions sans recadrage (Letterbox)."""
-    img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
+def resize_image_fit(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    working = img.copy()
+    working.thumbnail((target_w, target_h), RESAMPLE)
     new_img = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-    # Centrage
-    offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
-    new_img.paste(img, offset)
+    if working.mode != "RGBA":
+        working = _prepare_image_for_png(working)
+        if working.mode != "RGBA":
+            working = working.convert("RGBA")
+    offset = ((target_w - working.width) // 2, (target_h - working.height) // 2)
+    new_img.paste(working, offset, working if working.mode == "RGBA" else None)
     return new_img
 
 
-def resize_image_stretch(img, target_w, target_h):
-    """Redimensionne en étirant (Déformation)."""
-    return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+def resize_image_stretch(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    return img.resize((target_w, target_h), RESAMPLE)
 
 
-def process_file(
-    file_path,
-    target_w,
-    target_h,
-    method_choice,
-    output_dir,
-    global_info,
-    override_name=None,
-):
+def resize_image(img: Image.Image, target_w: int, target_h: int, method: str) -> Image.Image:
+    img = _prepare_image_for_png(img)
+    if method == "1":
+        return resize_image_fill(img, target_w, target_h)
+    if method == "2":
+        return resize_image_fit(img, target_w, target_h)
+    return resize_image_stretch(img, target_w, target_h)
+
+
+def resize_pil_image(img: Image.Image, config: Dict[str, Any]) -> Tuple[Image.Image, int, int]:
+    """Resize an already opened PIL image. Used by image_master to avoid intermediate files."""
+    src_w, src_h = img.size
+    target_w, target_h = resolve_target_dimensions(
+        src_w,
+        src_h,
+        config.get("target_w"),
+        config.get("target_h"),
+        bool(config.get("width_auto")),
+        bool(config.get("height_auto")),
+    )
+    resized = resize_image(img, target_w, target_h, str(config.get("method", "1")))
+    return resized, target_w, target_h
+
+
+def resize_one_image(
+    input_path: str,
+    output_dir: str,
+    config: Dict[str, Any],
+    global_info: Tuple[int, int] = (1, 1),
+    show_progress: bool = True,
+) -> Dict[str, Any]:
     idx, total = global_info
-    try:
-        original_size = os.path.getsize(file_path)
-        base_name = os.path.splitext(os.path.basename(file_path))[0]
+    original_size = os.path.getsize(input_path)
 
-        if override_name:
-            output_filename = override_name
-        else:
-            # Auto-naming rules: YYYYMMDD_HHMMSS pour les lots
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{base_name}_{target_w}x{target_h}_{timestamp}.png"
+    if show_progress:
+        render_progress(idx - 1, total, input_path, 15, 100, "Ouverture")
+        time.sleep(0.01)
 
-        output_path = os.path.join(output_dir, output_filename)
+    with Image.open(input_path) as source_img:
+        resized, target_w, target_h = resize_pil_image(source_img.copy(), config)
 
-        img = Image.open(file_path)
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    output_filename = f"{base_name}_{target_w}x{target_h}.png"
+    output_path = make_unique_path(os.path.join(output_dir, output_filename))
 
-        # Simulation progression
-        for s in range(0, 51, 10):
-            render_progress(idx - 1, total, file_path, step=s, total_steps=100)
-            time.sleep(0.01)
+    if show_progress:
+        render_progress(idx - 1, total, input_path, 70, 100, "Resize")
+        time.sleep(0.01)
 
-        if method_choice == "1":
-            img = resize_image_fill(img, target_w, target_h)
-        elif method_choice == "2":
-            img = resize_image_fit(img, target_w, target_h)
-        else:
-            img = resize_image_stretch(img, target_w, target_h)
+    resized.save(output_path, format="PNG", optimize=True)
+    new_size = os.path.getsize(output_path)
 
-        for s in range(60, 101, 10):
-            render_progress(idx - 1, total, file_path, step=s, total_steps=100)
-            time.sleep(0.01)
+    if show_progress:
+        render_progress(idx, total, input_path, 100, 100, "Termine")
 
-        # Preserve alpha if JPEG input but we save as PNG anyway
-        img.save(output_path, "PNG", optimize=True)
-
-        new_size = os.path.getsize(output_path)
-        render_progress(idx, total, file_path, step=100, total_steps=100)
-        return True, original_size, new_size
-    except Exception as e:
-        print(f"\n❌ Erreur sur {file_path}: {e}")
-        return False, 0, 0
+    return {
+        "status": "success",
+        "input": input_path,
+        "output": output_path,
+        "original_size": original_size,
+        "new_size": new_size,
+        "width": target_w,
+        "height": target_h,
+    }
 
 
-def main():
-    print_banner()
+def resize_images(
+    files: List[str],
+    output_dir: str,
+    config: Dict[str, Any],
+    show_progress: bool = True,
+) -> Dict[str, Any]:
+    os.makedirs(output_dir, exist_ok=True)
+    results: List[Dict[str, Any]] = []
+    output_files: List[str] = []
+    errors: List[Dict[str, str]] = []
+    total = len(files)
 
-    # 1. Entrée des fichiers
-    paths = []
-    if len(sys.argv) > 1:
-        paths = sys.argv[1:]
-    else:
-        path_input = (
-            input("📂 Glissez un fichier ou un dossier (ou entrez le chemin) : ")
-            .strip()
-            .strip('"')
-        )
-        if path_input:
-            paths = [path_input]
+    for idx, input_path in enumerate(files, 1):
+        try:
+            result = resize_one_image(
+                input_path,
+                output_dir,
+                config,
+                global_info=(idx, total),
+                show_progress=show_progress,
+            )
+            results.append(result)
+            output_files.append(result["output"])
+        except Exception as exc:
+            errors.append({"file": input_path, "error": str(exc)})
+            print(f"\n[Erreur] Redimensionnement impossible pour {input_path}: {exc}")
 
+    if show_progress:
+        print()
+
+    return {
+        "files": output_files,
+        "success_count": len(output_files),
+        "errors": errors,
+        "results": results,
+        "original_size": get_total_size(files),
+        "final_size": get_total_size(output_files),
+    }
+
+
+def main() -> None:
+    configure_console()
+    print_banner("resizer")
+
+    paths = sys.argv[1:] if len(sys.argv) > 1 else ask_input_paths("Chemin image ou dossier : ")
     if not paths:
-        print("❌ Aucun chemin spécifié.")
+        print("[Erreur] Aucun chemin specifie.")
         sys.exit(0)
 
     files = get_target_files(paths)
     if not files:
-        print("❌ Aucun fichier image valide trouvé.")
-        sys.exit(0)
-
-    print(f"✅ {len(files)} images détectées.")
-
-    # 2. Dimensions
-    try:
-        print("\n--- 📏 DIMENSIONS CIBLES ---")
-        w_input = input("Largeur : ").strip()
-        if not w_input:
-            raise ValueError
-        target_w = int(w_input)
-
-        h_input = input("Hauteur : ").strip()
-        if not h_input:
-            raise ValueError
-        target_h = int(h_input)
-    except ValueError:
-        print("❌ Dimensions invalides. Veuillez entrer des nombres entiers.")
+        print("[Erreur] Aucune image valide trouvee.")
         sys.exit(1)
 
-    # 3. Méthode
-    print("\n--- ⚙️ MÉTHODE DE REDIMENSIONNEMENT ---")
-    for k, v in RESIZE_METHODS.items():
-        print(f"{k}. {v}")
-    method_choice = input("Votre choix (par défaut 1) : ").strip() or "1"
-    if method_choice not in RESIZE_METHODS:
-        print("⚠️ Choix invalide, utilisation de 'Remplissage'.")
-        method_choice = "1"
+    image_infos = get_image_infos(files)
+    if not image_infos:
+        print("[Erreur] Aucune image lisible trouvee.")
+        sys.exit(1)
 
-    # 4. Dossier de sortie
-    first_arg = paths[0]
-    is_single_file = len(files) == 1
+    print(f"{len(image_infos)} image(s) detectee(s).")
+    print_image_table(image_infos)
 
-    if is_single_file:
-        output_dir = os.path.dirname(os.path.abspath(files[0]))
-        output_msg = f"L'image sera sauvegardée dans : {output_dir}"
-    elif os.path.isdir(first_arg):
-        output_dir = first_arg.rstrip("/\\") + "_resized"
-        output_msg = f"Dossier de sortie : {output_dir}"
-    else:
-        output_dir = os.path.join(
-            os.path.dirname(os.path.abspath(first_arg)), "resized"
-        )
-        output_msg = f"Dossier de sortie : {output_dir}"
+    try:
+        config = ask_resize_config()
+    except ValueError as exc:
+        print(f"[Erreur] {exc}")
+        sys.exit(1)
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    print(f"\n📂 {output_msg}")
+    output_dir = ask_output_dir(paths, files, default_folder_name="resized", batch_suffix="_resized")
+    print(f"Sortie : {output_dir}")
 
-    # 5. Confirmation
-    confirm = input(f"🚀 Prêt à traiter {len(files)} images ? (O/n) : ").strip().lower()
-    if confirm == "n":
-        print("🚫 Opération annulée.")
+    if not ask_yes_no(f"Lancer le redimensionnement sur {len(files)} image(s) ? (O/n) : ", default=True):
+        print("Operation annulee.")
         sys.exit(0)
 
-    # 6. Traitement
-    print("\n--- 🚀 TRAITEMENT ---")
-    success_count = 0
-    total_original = 0
-    total_new = 0
-
     start_time = time.time()
-    try:
-        for i, f in enumerate(files, 1):
-            override_name = None
-            if is_single_file:
-                base = os.path.splitext(os.path.basename(f))[0]
-                override_name = f"{base}_resized.png"
-
-            res, orig, new = process_file(
-                f,
-                target_w,
-                target_h,
-                method_choice,
-                output_dir,
-                (i, len(files)),
-                override_name,
-            )
-            if res:
-                success_count += 1
-                total_original += orig
-                total_new += new
-        print()
-    except KeyboardInterrupt:
-        print("\n⚠️ Interruption utilisateur.")
-
-    # 7. Bilan
+    result = resize_images(files, output_dir, config, show_progress=True)
     duration = time.time() - start_time
-    print("\n" + "=" * 40)
-    print("📊 BILAN FINAL")
-    print("=" * 40)
-    print(f"✅ Images traitées : {success_count}/{len(files)}")
-    print(f"⏱️ Temps écoulé    : {duration:.2f} secondes")
-    print(f"📦 Taille initiale : {format_size(total_original)}")
-    print(f"📦 Taille finale   : {format_size(total_new)}")
 
-    diff = total_new - total_original
-    if diff < 0:
-        print(f"📉 Gain d'espace   : {format_size(abs(diff))}")
-    else:
-        print(f"📈 Augmentation    : {format_size(diff)}")
-    print("=" * 40)
-    print("🚀 Fini !")
+    print("\n" + "=" * 45)
+    print("BILAN REDIMENSIONNEMENT")
+    print("=" * 45)
+    print(f"Images traitees : {result['success_count']}/{len(files)}")
+    print(f"Temps ecoule    : {duration:.2f} secondes")
+    print(f"Taille initiale : {format_size(result['original_size'])}")
+    print(f"Taille finale   : {format_size(result['final_size'])}")
+    print(f"Sortie          : {output_dir}")
+    print("=" * 45)
 
 
 if __name__ == "__main__":
