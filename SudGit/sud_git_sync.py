@@ -284,36 +284,27 @@ def lancer_sync():
 
         branche_cible = d.get("branche")
 
-        # 1. Détection Automatique de Branche
+        # 1. Detection de la branche courante (toujours necessaire)
+        bc_succes, branche_courante = executer_commande_git(
+            chemin, ["branch", "--show-current"]
+        )
+        if not bc_succes or not branche_courante:
+            print("  ❌ \033[91mImpossible de détecter la branche courante.\033[0m")
+            echecs += 1
+            continue
+
+        # 2. Determination de la branche cible
         if not branche_cible:
-            b_succes, b_out = executer_commande_git(
-                chemin, ["branch", "--show-current"]
+            branche_cible = branche_courante
+            print(
+                f"  🔍 Branche détectée automatiquement : \033[96m{branche_cible}\033[0m"
             )
-            if b_succes and b_out:
-                branche_cible = b_out
-                print(
-                    f"  🔍 Branche détectée automatiquement : \033[96m{branche_cible}\033[0m"
-                )
-            else:
-                print(
-                    "  ❌ \033[91mErreur : Impossible de détecter la branche courante. Dépôt initialisé mais sans commit ?\033[0m"
-                )
-                echecs += 1
-                continue
         else:
             print(f"  🎯 Branche configurée : \033[96m{branche_cible}\033[0m")
-            # Checkout de la branche cible si nécessaire
-            checkout_succes, checkout_out = executer_commande_git(
-                chemin, ["checkout", branche_cible]
-            )
-            if not checkout_succes:
-                print(
-                    f"  ❌ \033[91mErreur lors du checkout de la branche {branche_cible} : {checkout_out}\033[0m"
-                )
-                echecs += 1
-                continue
 
-        # 2. Git Fetch avec Prune
+        sur_bonne_branche = branche_courante == branche_cible
+
+        # 3. Git Fetch avec Prune
         print("  ⏳ Récupération de l'état distant (git fetch --prune)...")
         f_succes, f_out = executer_commande_git(chemin, ["fetch", "--prune"])
         if not f_succes:
@@ -321,59 +312,151 @@ def lancer_sync():
             echecs += 1
             continue
 
-        # 3. Comparaison de l'état
+        # 4. Comparaison de l'etat
         print("  ⚖️  Comparaison des états local et distant...")
         status_succes, status_out = executer_commande_git(chemin, ["status", "-uno"])
 
-        if status_succes:
-            out_lower = status_out.lower()
-            if (
-                "behind" in out_lower
-                or "retard" in out_lower
-                or "fast-forwarded" in out_lower
-            ):
-                # 4. Git Pull si maj trouvée
-                print(
-                    "  📥 \033[93mMises à jour distantes trouvées, exécution de git pull...\033[0m"
-                )
-                pull_succes, pull_out = executer_commande_git(chemin, ["pull"])
-                if pull_succes:
-                    print("  ✅ \033[92mMis à jour avec succès.\033[0m")
-                    succes += 1
-                else:
-                    print(f"  ❌ \033[91mErreur lors du git pull : {pull_out}\033[0m")
-                    echecs += 1
-            elif "up to date" in out_lower or "à jour" in out_lower:
-                print("  ✅ \033[92mDépôt déjà à jour.\033[0m")
-                succes += 1
-            else:
-                # Fallback sécurisé en cas d'absence d'upstream branch configurée
-                print(
-                    "  ⚠️  \033[93mÉtat ambigu (pas d'upstream détecté), tentative de git pull origin...\033[0m"
-                )
-                pull_succes, pull_out = executer_commande_git(
-                    chemin, ["pull", "origin", branche_cible]
-                )
-                if pull_succes:
-                    if (
-                        "already up to date" in pull_out.lower()
-                        or "déjà à jour" in pull_out.lower()
-                        or "already up-to-date" in pull_out.lower()
-                    ):
-                        print("  ✅ \033[92mDépôt déjà à jour.\033[0m")
-                    else:
-                        print("  ✅ \033[92mMis à jour avec succès.\033[0m")
-                    succes += 1
-                else:
-                    print(
-                        f"  ❌ \033[91mErreur lors du git pull (pas de remote 'origin' ou conflit ?) : {pull_out}\033[0m"
-                    )
-                    echecs += 1
-        else:
+        if not status_succes:
             print(
                 f"  ❌ \033[91mImpossible d'obtenir le statut git : {status_out}\033[0m"
             )
             echecs += 1
+            continue
+
+        out_lower = status_out.lower()
+        besoin_pull = (
+            "behind" in out_lower
+            or "retard" in out_lower
+            or "fast-forwarded" in out_lower
+        )
+        deja_a_jour = "up to date" in out_lower or "à jour" in out_lower
+
+        if deja_a_jour and not besoin_pull:
+            print("  ✅ \033[92mDépôt déjà à jour.\033[0m")
+            succes += 1
+            continue
+
+        # Mode ambigu : pas d'upstream clairement configure
+        pull_explicite = not besoin_pull and not deja_a_jour
+
+        if pull_explicite:
+            print(
+                "  ⚠️  \033[93mÉtat ambigu (pas d'upstream détecté), tentative de git pull origin...\033[0m"
+            )
+
+        # 5. Detection des fichiers modifies localement (staged + unstaged)
+        _, fichiers_locaux_raw = executer_commande_git(
+            chemin, ["diff", "--name-only", "HEAD"]
+        )
+        _, fichiers_staged_raw = executer_commande_git(
+            chemin, ["diff", "--name-only", "--cached", "HEAD"]
+        )
+        fichiers_locaux = set(
+            (fichiers_locaux_raw or "").splitlines()
+            + (fichiers_staged_raw or "").splitlines()
+        )
+        fichiers_locaux = {f.strip() for f in fichiers_locaux if f.strip()}
+
+        # 6. Detection des fichiers modifies cote distant
+        _, fichiers_distants_raw = executer_commande_git(
+            chemin, ["diff", "--name-only", f"HEAD...origin/{branche_cible}"]
+        )
+        fichiers_distants = {
+            f.strip() for f in (fichiers_distants_raw or "").splitlines() if f.strip()
+        }
+
+        # 7. Verification des conflits potentiels
+        conflits = fichiers_locaux & fichiers_distants
+
+        stash_effectue = False
+        checkout_effectue = False
+
+        if fichiers_locaux:
+            if conflits:
+                print(
+                    f"  ⚠️  \033[93mConflits potentiels sur {len(conflits)} fichier(s) — pull ignoré (gérez manuellement) :\033[0m"
+                )
+                for f in sorted(conflits):
+                    print(f"      \033[91m⚡ {f}\033[0m")
+                echecs += 1
+                continue
+            else:
+                print(
+                    f"  📦 \033[93m{len(fichiers_locaux)} fichier(s) local/locaux sans conflit → git stash en cours...\033[0m"
+                )
+                stash_succes, stash_out = executer_commande_git(
+                    chemin, ["stash", "push", "-u", "-m", "sudgitsync-auto-stash"]
+                )
+                if not stash_succes:
+                    print(f"  ❌ \033[91mErreur lors du git stash : {stash_out}\033[0m")
+                    echecs += 1
+                    continue
+                stash_effectue = True
+                print("  ✅ \033[92mChangements locaux mis en stash.\033[0m")
+
+        # 8. Checkout vers la branche cible si on n'y est pas
+        if not sur_bonne_branche:
+            print(
+                f"  🔀 Branche courante (\033[96m{branche_courante}\033[0m) ≠ cible (\033[96m{branche_cible}\033[0m) — checkout en cours..."
+            )
+            checkout_succes, checkout_out = executer_commande_git(
+                chemin, ["checkout", branche_cible]
+            )
+            if not checkout_succes:
+                print(f"  ❌ \033[91mErreur lors du checkout : {checkout_out}\033[0m")
+                if stash_effectue:
+                    executer_commande_git(chemin, ["stash", "pop"])
+                    print(
+                        "  ↩️  \033[93mStash restauré suite à l'échec du checkout.\033[0m"
+                    )
+                echecs += 1
+                continue
+            checkout_effectue = True
+
+        # 9. Git Pull
+        print(
+            "  📥 \033[93mMises à jour distantes trouvées, exécution de git pull...\033[0m"
+        )
+        if pull_explicite:
+            pull_succes, pull_out = executer_commande_git(
+                chemin, ["pull", "origin", branche_cible]
+            )
+        else:
+            pull_succes, pull_out = executer_commande_git(chemin, ["pull"])
+
+        if pull_succes:
+            if (
+                "already up to date" in pull_out.lower()
+                or "déjà à jour" in pull_out.lower()
+                or "already up-to-date" in pull_out.lower()
+            ):
+                print("  ✅ \033[92mDépôt déjà à jour.\033[0m")
+            else:
+                print("  ✅ \033[92mMis à jour avec succès.\033[0m")
+            succes += 1
+        else:
+            print(f"  ❌ \033[91mErreur lors du git pull : {pull_out}\033[0m")
+            echecs += 1
+
+        # 10. Retour sur la branche d'origine si on a switche
+        if checkout_effectue:
+            print(
+                f"  🔀 Retour sur la branche d'origine : \033[96m{branche_courante}\033[0m"
+            )
+            executer_commande_git(chemin, ["checkout", branche_courante])
+
+        # 11. Restauration du stash
+        if stash_effectue:
+            print(
+                "  📤 \033[93mRestauration des changements locaux (git stash pop)...\033[0m"
+            )
+            pop_succes, pop_out = executer_commande_git(chemin, ["stash", "pop"])
+            if pop_succes:
+                print("  ✅ \033[92mChangements locaux restaurés avec succès.\033[0m")
+            else:
+                print(
+                    f"  ⚠️  \033[93mAvertissement lors du stash pop (conflit possible) : {pop_out}\033[0m"
+                )
 
     print("\n" + "=" * 45)
     print("📊 \033[1mBilan final de la GitSync :\033[0m")

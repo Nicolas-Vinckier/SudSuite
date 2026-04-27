@@ -1,3 +1,6 @@
+# Extensions à ignorer
+*.pyc
+
 # Images
 *.png
 *.jpg
