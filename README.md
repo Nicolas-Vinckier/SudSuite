@@ -98,15 +98,17 @@ Un outil de sécurité robuste permettant de chiffrer un dossier local vers un d
 
 ### 9. 📥 SudGit Sync (`SudGit/sud_git_sync.py`)
 
-Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plusieurs dépôts Git locaux simultanément.
+Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plusieurs dépôts Git locaux simultanément et en parallèle.
 
+- **Synchronisation Parallèle** : Traite plusieurs dépôts en même temps via multithreading (parallélisme configurable, 5 par défaut) pour une rapidité maximale.
+- **Auto-Stash Intelligent** : Détecte les modifications locales non commitées, les met en sécurité (stash) avant le pull, puis les restaure automatiquement (stash pop) sans perturber votre travail en cours.
 - **Modes de Lancement** :
   - **Unique** : Une vérification complète à la demande.
   - **Continu** : Boucle de surveillance automatique avec intervalle configurable (ex: toutes les 60s).
 - **Scan en Masse** : Ajoutez instantanément tous vos projets en scannant un dossier parent (détection automatique des dossiers `.git`).
 - **Clean Sync (Prune)** : Utilise `git fetch --prune` pour nettoyer automatiquement les références aux branches supprimées sur le serveur.
-- **Sécurité & Visibilité** : Affichage en tableau pour une gestion claire des dépôts et aucune opération de `push` automatique pour protéger vos commits locaux.
-- **Bilan Global** : Statut précis pour chaque dépôt (À jour, Mis à jour, Erreur).
+- **Sécurité & Visibilité** : Affichage thread-safe et en tableau pour une gestion claire des dépôts. Aucune opération de `push` automatique.
+- **Bilan Global** : Statut précis pour chaque dépôt (À jour, Mis à jour, Erreur) et affichage de la durée totale.
 
 ---
 
@@ -214,8 +216,8 @@ python SudGit/sud_git_sync.py
 ```
 
 1.  Lancez le script via votre terminal.
-2.  Dans le menu Principal, allez dans la configuration (choix `2`) pour ajouter vos dossiers Git.
-3.  Revenez au menu principal et lancez la GitSync (choix `1`) pour tout mettre à jour en cascade.
+2.  Dans le menu Principal, allez dans la configuration (choix `3`) pour ajouter vos dossiers Git et régler le parallélisme.
+3.  Revenez au menu principal et lancez la GitSync (choix `1`) pour tout mettre à jour en parallèle.
 
 ---
 
