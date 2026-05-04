@@ -6,6 +6,53 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
+# Détection initiale du support UTF-8
+def get_emojis(use_utf8=True):
+    return {
+        "BACK": "🔙" if use_utf8 else "[BACK]",
+        "BOX": "📦" if use_utf8 else "[BOX]",
+        "BYE": "👋" if use_utf8 else "[BYE]",
+        "CHART": "📊" if use_utf8 else "[STATS]",
+        "COMPASS": "🧭" if use_utf8 else "[MENU]",
+        "DOOR": "🚪" if use_utf8 else "[EXIT]",
+        "ERROR": "❌" if use_utf8 else "[ERROR]",
+        "FOLDER": "📂" if use_utf8 else "[DIR]",
+        "GEAR": "⚙️" if use_utf8 else "[CFG]",
+        "HOURGLASS": "⏳" if use_utf8 else "[WAIT]",
+        "INBOX": "📥" if use_utf8 else "[IN]",
+        "LIGHTNING": "⚡" if use_utf8 else "[SPEED]",
+        "MINUS": "➖" if use_utf8 else "[-]",
+        "OUTBOX": "📤" if use_utf8 else "[OUT]",
+        "PENCIL": "✏️" if use_utf8 else "[EDIT]",
+        "PLUS": "➕" if use_utf8 else "[+]",
+        "POINTER": "👉" if use_utf8 else ">",
+        "RETURN": "↩️" if use_utf8 else "[RETURN]",
+        "ROCKET": "🚀" if use_utf8 else "[START]",
+        "SCALES": "⚖️" if use_utf8 else "[COMPARE]",
+        "SEARCH": "🔍" if use_utf8 else "[SCAN]",
+        "SHUFFLE": "🔀" if use_utf8 else "[SWITCH]",
+        "STOPWATCH": "⏱️" if use_utf8 else "[TIME]",
+        "SUCCESS": "✅" if use_utf8 else "[OK]",
+        "SYNC": "🔄" if use_utf8 else "[SYNC]",
+        "TARGET": "🎯" if use_utf8 else "[TARGET]",
+        "WARN": "⚠️" if use_utf8 else "[WARN]",
+    }
+
+
+_UTF8_SYSTEM = (getattr(sys.stdout, "encoding", "") or "").lower() == "utf-8"
+E = get_emojis(_UTF8_SYSTEM)
+
+
+def safe_print(msg, end="\n"):
+    """Imprime un message en gérant les erreurs d'encodage sur Windows."""
+    try:
+        print(msg, end=end)
+    except UnicodeEncodeError:
+        clean_msg = str(msg).encode("ascii", "ignore").decode("ascii")
+        print(clean_msg, end=end)
+
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "sud_git_config.json")
 
@@ -14,7 +61,7 @@ _print_lock = threading.Lock()
 
 
 def afficher_en_tete():
-    print(
+    safe_print(
         r"""
  ____            _  ____ _ _   ____                   
 / ___| _   _  __| |/ ___(_) |_/ ___| _   _ _ __   ___ 
@@ -27,6 +74,7 @@ def afficher_en_tete():
 
 
 def charger_config():
+    global E
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -38,10 +86,16 @@ def charger_config():
                     config["intervalle"] = 60
                 if "parallelisme" not in config:
                     config["parallelisme"] = 5
+                if "use_emojis" not in config:
+                    config["use_emojis"] = _UTF8_SYSTEM
+
+                # Mise à jour globale des émojis selon la config
+                E = get_emojis(config["use_emojis"])
+
                 return config
         except json.JSONDecodeError:
-            print(
-                "❌ \033[91mErreur de lecture de la configuration. Fichier corrompu.\033[0m"
+            safe_print(
+                f"{E['ERROR']} \033[91mErreur de lecture de la configuration. Fichier corrompu.\033[0m"
             )
             return {"depots": [], "intervalle": 60, "parallelisme": 5}
     return {"depots": [], "intervalle": 60, "parallelisme": 5}
@@ -52,7 +106,7 @@ def sauvegarder_config(config):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
     except Exception as e:
-        print(f"❌ \033[91mErreur lors de la sauvegarde : {e}\033[0m")
+        safe_print(f"{E['ERROR']} \033[91mErreur lors de la sauvegarde : {e}\033[0m")
 
 
 def executer_commande_git(repo_path, commande):
@@ -79,21 +133,22 @@ def executer_commande_git(repo_path, commande):
 
 
 def configurer_depots():
+    global E
     config = charger_config()
     while True:
-        print("\n\033[93m--- ⚙️  Configuration des dépôts ---\033[0m")
+        safe_print(f"\n\033[93m--- {E['GEAR']}  Configuration des dépôts ---\033[0m")
         depots = config.get("depots", [])
         if not depots:
-            print("📂 Aucun dépôt configuré pour le moment.")
+            safe_print(f"{E['FOLDER']} Aucun dépôt configuré pour le moment.")
         else:
             # Affichage en tableau pour une meilleure lisibilité
-            print(
+            safe_print(
                 "\033[96m┌────┬──────────────────────────────────────────────────┬────────────────────┐"
             )
-            print(
+            safe_print(
                 "│ ID │ Dossier / Chemin                                 │ Branche            │"
             )
-            print(
+            safe_print(
                 "├────┼──────────────────────────────────────────────────┼────────────────────┤\033[0m"
             )
             for i, d in enumerate(depots, 1):
@@ -105,42 +160,51 @@ def configurer_depots():
                     display_path = chemin
 
                 branche = d.get("branche") or "\033[90mAuto-détection\033[96m"
-                print(
+                safe_print(
                     f"\033[96m│\033[0m {i:<2} \033[96m│\033[0m {display_path:<48} \033[96m│\033[0m {branche:<18} \033[96m│\033[0m"
                 )
-            print(
+            safe_print(
                 "\033[96m└────┴──────────────────────────────────────────────────┴────────────────────┘\033[0m"
             )
-            print(
-                f"⏱️  Intervalle actuel : \033[93m{config.get('intervalle', 60)} secondes\033[0m"
+            safe_print(
+                f"{E['STOPWATCH']}  Intervalle actuel : \033[93m{config.get('intervalle', 60)} secondes\033[0m"
             )
-            print(
-                f"⚡ Parallélisme actuel : \033[93m{config.get('parallelisme', 5)} thread(s) simultané(s)\033[0m"
+            safe_print(
+                f"{E['LIGHTNING']} Parallélisme actuel : \033[93m{config.get('parallelisme', 5)} thread(s) simultané(s)\033[0m"
             )
+            status_emojis = (
+                "\033[92mActivés\033[0m"
+                if config.get("use_emojis")
+                else "\033[91mDésactivés (Mode Texte)\033[0m"
+            )
+            safe_print(f"{E['SHUFFLE']} Émojis : {status_emojis}")
 
-        print("\nOptions :")
-        print("1. ➕ Ajouter un dossier individuel")
-        print("2. 🔍 Scan de dossier parent (Ajout en masse)")
-        print("3. ➖ Supprimer un dossier")
-        print("4. ✏️  Modifier la branche d'un dossier")
-        print("5. ⏱️  Modifier l'intervalle de sync (Mode Continu)")
-        print("6. ⚡ Modifier le nombre de dépôts en parallèle")
-        print("0. 🔙 Retour au menu principal")
+        safe_print("\nOptions :")
+        safe_print(f"1. {E['PLUS']} Ajouter un dossier individuel")
+        safe_print(f"2. {E['MINUS']} Supprimer un dossier")
+        safe_print(f"3. {E['SEARCH']} Scan de dossier parent (Ajout en masse)")
+        safe_print(f"4. {E['PENCIL']}  Modifier la branche d'un dossier")
+        safe_print(f"5. {E['STOPWATCH']}  Modifier l'intervalle de sync (Mode Continu)")
+        safe_print(f"6. {E['LIGHTNING']} Modifier le nombre de dépôts en parallèle")
+        safe_print(f"7. {E['SHUFFLE']} Basculer Émojis / Texte seul")
+        safe_print(f"0. {E['RETURN']} Retour au menu principal")
 
-        choix = input("\n👉 Votre choix (0-6) : ").strip()
+        choix = input(f"\n{E['POINTER']} Votre choix (0-7) : ").strip()
 
         if choix == "1":
-            chemin = input("Chemin absolu ou relatif du dépôt git (0 pour annuler) : ").strip()
+            chemin = input(
+                "Chemin absolu ou relatif du dépôt git (0 pour annuler) : "
+            ).strip()
             if not chemin or chemin == "0":
                 continue
 
             chemin_abs = os.path.abspath(chemin)
             if not os.path.exists(chemin_abs):
-                print("❌ \033[91mCe chemin n'existe pas.\033[0m")
+                safe_print(f"{E['ERROR']} \033[91mCe chemin n'existe pas.\033[0m")
                 continue
             if not os.path.isdir(os.path.join(chemin_abs, ".git")):
-                print(
-                    "⚠️  \033[93mCe dossier ne semble pas être un dépôt git valide (aucun dossier .git trouvé).\033[0m\nVoulez-vous tout de même l'ajouter ? (o/n)"
+                safe_print(
+                    f"{E['WARN']}  \033[93mCe dossier ne semble pas être un dépôt git valide (aucun dossier .git trouvé).\033[0m\nVoulez-vous tout de même l'ajouter ? (o/n)"
                 )
                 if input("-> ").strip().lower() != "o":
                     continue
@@ -152,8 +216,8 @@ def configurer_depots():
             # Vérification de doublons
             for d in depots:
                 if d["chemin"] == chemin_abs:
-                    print(
-                        "⚠️  \033[93mCe chemin est déjà configuré, modification de la branche...\033[0m"
+                    safe_print(
+                        f"{E['WARN']}  \033[93mCe chemin est déjà configuré, modification de la branche...\033[0m"
                     )
                     d["branche"] = branche
                     break
@@ -162,21 +226,46 @@ def configurer_depots():
 
             config["depots"] = depots
             sauvegarder_config(config)
-            print("✅ \033[92mDépôt configuré avec succès.\033[0m")
+            safe_print(f"{E['SUCCESS']} \033[92mDépôt configuré avec succès.\033[0m")
 
         elif choix == "2":
-            parent = input("Dossier parent à scanner (ex: C:/Dev/Projets, 0 pour annuler) : ").strip()
+            if not depots:
+                safe_print(f"{E['WARN']}  \033[93mAucun dépôt à supprimer.\033[0m")
+                continue
+            try:
+                entree = input(
+                    f"Numéro du dépôt à supprimer (1-{len(depots)}, 0 pour annuler) : "
+                ).strip()
+                if entree == "0":
+                    continue
+                idx = int(entree) - 1
+                if 0 <= idx < len(depots):
+                    supprime = depots.pop(idx)
+                    config["depots"] = depots
+                    sauvegarder_config(config)
+                    safe_print(
+                        f"{E['SUCCESS']} \033[92mDépôt supprimé : {supprime['chemin']}\033[0m"
+                    )
+                else:
+                    safe_print(f"{E['ERROR']} \033[91mNuméro invalide.\033[0m")
+            except ValueError:
+                safe_print(f"{E['ERROR']} \033[91mEntrée invalide.\033[0m")
+
+        elif choix == "3":
+            parent = input(
+                "Dossier parent à scanner (ex: C:/Dev/Projets, 0 pour annuler) : "
+            ).strip()
             if not parent or parent == "0":
                 continue
 
             parent_abs = os.path.abspath(parent)
             if not os.path.isdir(parent_abs):
-                print(
-                    "❌ \033[91mLe chemin spécifié n'est pas un dossier valide.\033[0m"
+                safe_print(
+                    f"{E['ERROR']} \033[91mLe chemin spécifié n'est pas un dossier valide.\033[0m"
                 )
                 continue
 
-            print(f"⏳ Scan de {parent_abs} en cours...")
+            safe_print(f"{E['HOURGLASS']} Scan de {parent_abs} en cours...")
             trouves = 0
             ajoutes = 0
 
@@ -196,41 +285,24 @@ def configurer_depots():
                 if trouves > 0:
                     config["depots"] = depots
                     sauvegarder_config(config)
-                    print(f"✅ \033[92mScan terminé !\033[0m")
-                    print(f"   🔍 Dépôts Git détectés : {trouves}")
-                    print(f"   ➕ Nouveaux dépôts ajoutés : {ajoutes}")
+                    safe_print(f"{E['SUCCESS']} \033[92mScan terminé !\033[0m")
+                    safe_print(f"   {E['SEARCH']} Dépôts Git détectés : {trouves}")
+                    safe_print(f"   {E['PLUS']} Nouveaux dépôts ajoutés : {ajoutes}")
                 else:
-                    print(
-                        "⚠️  \033[93mAucun sous-dossier contenant un dépôt Git (.git) n'a été trouvé.\033[0m"
+                    safe_print(
+                        f"{E['WARN']}  \033[93mAucun sous-dossier contenant un dépôt Git (.git) n'a été trouvé.\033[0m"
                     )
             except Exception as e:
-                print(f"❌ \033[91mErreur lors du scan : {e}\033[0m")
-
-        elif choix == "3":
-            if not depots:
-                print("⚠️  \033[93mAucun dépôt à supprimer.\033[0m")
-                continue
-            try:
-                entree = input(f"Numéro du dépôt à supprimer (1-{len(depots)}, 0 pour annuler) : ").strip()
-                if entree == "0":
-                    continue
-                idx = int(entree) - 1
-                if 0 <= idx < len(depots):
-                    supprime = depots.pop(idx)
-                    config["depots"] = depots
-                    sauvegarder_config(config)
-                    print(f"✅ \033[92mDépôt supprimé : {supprime['chemin']}\033[0m")
-                else:
-                    print("❌ \033[91mNuméro invalide.\033[0m")
-            except ValueError:
-                print("❌ \033[91mEntrée invalide.\033[0m")
+                safe_print(f"{E['ERROR']} \033[91mErreur lors du scan : {e}\033[0m")
 
         elif choix == "4":
             if not depots:
-                print("⚠️  \033[93mAucun dépôt à modifier.\033[0m")
+                safe_print(f"{E['WARN']}  \033[93mAucun dépôt à modifier.\033[0m")
                 continue
             try:
-                entree = input(f"Numéro du dépôt à modifier (1-{len(depots)}, 0 pour annuler) : ").strip()
+                entree = input(
+                    f"Numéro du dépôt à modifier (1-{len(depots)}, 0 pour annuler) : "
+                ).strip()
                 if entree == "0":
                     continue
                 idx = int(entree) - 1
@@ -241,52 +313,71 @@ def configurer_depots():
                     depots[idx]["branche"] = nouvelle_branche
                     config["depots"] = depots
                     sauvegarder_config(config)
-                    print("✅ \033[92mBranche mise à jour.\033[0m")
+                    safe_print(f"{E['SUCCESS']} \033[92mBranche mise à jour.\033[0m")
                 else:
-                    print("❌ \033[91mNuméro invalide.\033[0m")
+                    safe_print(f"{E['ERROR']} \033[91mNuméro invalide.\033[0m")
             except ValueError:
-                print("❌ \033[91mEntrée invalide.\033[0m")
+                safe_print(f"{E['ERROR']} \033[91mEntrée invalide.\033[0m")
 
         elif choix == "5":
             try:
-                entree = input("Entrez le nouvel intervalle en secondes (min 10, 0 pour annuler) : ").strip()
+                entree = input(
+                    "Entrez le nouvel intervalle en secondes (min 10, 0 pour annuler) : "
+                ).strip()
                 if entree == "0":
                     continue
                 nouveau_temps = int(entree)
                 if nouveau_temps < 10:
-                    print(
-                        "⚠️  \033[93mIntervalle trop court (min 10s pour éviter le spam).\033[0m"
+                    safe_print(
+                        f"{E['WARN']}  \033[93mIntervalle trop court (min 10s pour éviter le spam).\033[0m"
                     )
                     nouveau_temps = 10
                 config["intervalle"] = nouveau_temps
                 sauvegarder_config(config)
-                print(f"✅ \033[92mIntervalle mis à jour à {nouveau_temps}s.\033[0m")
+                safe_print(
+                    f"{E['SUCCESS']} \033[92mIntervalle mis à jour à {nouveau_temps}s.\033[0m"
+                )
             except ValueError:
-                print(
-                    "❌ \033[91mEntrée invalide, veuillez saisir un nombre entier.\033[0m"
+                safe_print(
+                    f"{E['ERROR']} \033[91mEntrée invalide, veuillez saisir un nombre entier.\033[0m"
                 )
 
         elif choix == "6":
             try:
-                entree = input("Nombre de dépôts à traiter en parallèle (1 = séquentiel, défaut 5, 0 pour annuler) : ").strip()
+                entree = input(
+                    "Nombre de dépôts à traiter en parallèle (1 = séquentiel, défaut 5, 0 pour annuler) : "
+                ).strip()
                 if entree == "0":
                     continue
                 val = int(entree)
                 if val < 1:
-                    print("⚠️  \033[93mValeur trop basse, minimum 1.\033[0m")
+                    safe_print(
+                        f"{E['WARN']}  \033[93mValeur trop basse, minimum 1.\033[0m"
+                    )
                     val = 1
                 config["parallelisme"] = val
                 sauvegarder_config(config)
-                print(f"✅ \033[92mParallélisme mis à jour à {val} thread(s).\033[0m")
-            except ValueError:
-                print(
-                    "❌ \033[91mEntrée invalide, veuillez saisir un nombre entier.\033[0m"
+                safe_print(
+                    f"{E['SUCCESS']} \033[92mParallélisme mis à jour à {val} thread(s).\033[0m"
                 )
+            except ValueError:
+                safe_print(
+                    f"{E['ERROR']} \033[91mEntrée invalide, veuillez saisir un nombre entier.\033[0m"
+                )
+
+        elif choix == "7":
+            config["use_emojis"] = not config.get("use_emojis", True)
+            sauvegarder_config(config)
+            # Rafraîchir E immédiatement
+            E = get_emojis(config["use_emojis"])
+            safe_print(
+                f"{E['SUCCESS']} Mode {'Émojis' if config['use_emojis'] else 'Texte'} activé."
+            )
 
         elif choix == "0":
             break
         else:
-            print("❌ \033[91mOption invalide.\033[0m")
+            safe_print(f"{E['ERROR']} \033[91mOption invalide.\033[0m")
 
 
 def syncer_depot(d):
@@ -296,12 +387,12 @@ def syncer_depot(d):
     """
     logs = []
     chemin = d["chemin"]
-    logs.append(f"\n📂 \033[1mTraitement de : {chemin}\033[0m")
+    logs.append(f"\n{E['FOLDER']} \033[1mTraitement de : {chemin}\033[0m")
 
-    if not os.path.exists(chemin) or not os.path.isdir(
-        os.path.join(chemin, ".git")
-    ):
-        logs.append("  ❌ \033[91mErreur : Dossier non-Git ou inexistant.\033[0m")
+    if not os.path.exists(chemin) or not os.path.isdir(os.path.join(chemin, ".git")):
+        logs.append(
+            f"  {E['ERROR']} \033[91mErreur : Dossier non-Git ou inexistant.\033[0m"
+        )
         return False, logs
 
     branche_cible = d.get("branche")
@@ -311,47 +402,51 @@ def syncer_depot(d):
         chemin, ["branch", "--show-current"]
     )
     if not bc_succes or not branche_courante:
-        logs.append("  ❌ \033[91mImpossible de détecter la branche courante.\033[0m")
+        logs.append(
+            f"  {E['ERROR']} \033[91mImpossible de détecter la branche courante.\033[0m"
+        )
         return False, logs
 
     # 2. Determination de la branche cible
     if not branche_cible:
         branche_cible = branche_courante
         logs.append(
-            f"  🔍 Branche détectée automatiquement : \033[96m{branche_cible}\033[0m"
+            f"  {E['SEARCH']} Branche détectée automatiquement : \033[96m{branche_cible}\033[0m"
         )
     else:
-        logs.append(f"  🎯 Branche configurée : \033[96m{branche_cible}\033[0m")
+        logs.append(
+            f"  {E['TARGET']} Branche configurée : \033[96m{branche_cible}\033[0m"
+        )
 
     sur_bonne_branche = branche_courante == branche_cible
 
     # 3. Git Fetch avec Prune
-    logs.append("  ⏳ Récupération de l'état distant (git fetch --prune)...")
+    logs.append(
+        f"  {E['HOURGLASS']} Récupération de l'état distant (git fetch --prune)..."
+    )
     f_succes, f_out = executer_commande_git(chemin, ["fetch", "--prune"])
     if not f_succes:
-        logs.append(f"  ❌ \033[91mErreur de fetch : {f_out}\033[0m")
+        logs.append(f"  {E['ERROR']} \033[91mErreur de fetch : {f_out}\033[0m")
         return False, logs
 
     # 4. Comparaison de l'etat
-    logs.append("  ⚖️  Comparaison des états local et distant...")
+    logs.append(f"  {E['SCALES']}  Comparaison des états local et distant...")
     status_succes, status_out = executer_commande_git(chemin, ["status", "-uno"])
 
     if not status_succes:
         logs.append(
-            f"  ❌ \033[91mImpossible d'obtenir le statut git : {status_out}\033[0m"
+            f"  {E['ERROR']} \033[91mImpossible d'obtenir le statut git : {status_out}\033[0m"
         )
         return False, logs
 
     out_lower = status_out.lower()
     besoin_pull = (
-        "behind" in out_lower
-        or "retard" in out_lower
-        or "fast-forwarded" in out_lower
+        "behind" in out_lower or "retard" in out_lower or "fast-forwarded" in out_lower
     )
     deja_a_jour = "up to date" in out_lower or "à jour" in out_lower
 
     if deja_a_jour and not besoin_pull:
-        logs.append("  ✅ \033[92mDépôt déjà à jour.\033[0m")
+        logs.append(f"  {E['SUCCESS']} \033[92mDépôt déjà à jour.\033[0m")
         return True, logs
 
     # Mode ambigu : pas d'upstream clairement configure
@@ -359,7 +454,7 @@ def syncer_depot(d):
 
     if pull_explicite:
         logs.append(
-            "  ⚠️  \033[93mÉtat ambigu (pas d'upstream détecté), tentative de git pull origin...\033[0m"
+            f"  {E['WARN']}  \033[93mÉtat ambigu (pas d'upstream détecté), tentative de git pull origin...\033[0m"
         )
 
     # 5. Detection des fichiers modifies localement (staged + unstaged)
@@ -392,45 +487,51 @@ def syncer_depot(d):
     if fichiers_locaux:
         if conflits:
             logs.append(
-                f"  ⚠️  \033[93mConflits potentiels sur {len(conflits)} fichier(s) — pull ignoré (gérez manuellement) :\033[0m"
+                f"  {E['WARN']}  \033[93mConflits potentiels sur {len(conflits)} fichier(s) — pull ignoré (gérez manuellement) :\033[0m"
             )
             for f in sorted(conflits):
-                logs.append(f"      \033[91m⚡ {f}\033[0m")
+                logs.append(f"      \033[91m{E['LIGHTNING']} {f}\033[0m")
             return False, logs
         else:
             logs.append(
-                f"  📦 \033[93m{len(fichiers_locaux)} fichier(s) local/locaux sans conflit → git stash en cours...\033[0m"
+                f"  {E['BOX']} \033[93m{len(fichiers_locaux)} fichier(s) local/locaux sans conflit → git stash en cours...\033[0m"
             )
             stash_succes, stash_out = executer_commande_git(
                 chemin, ["stash", "push", "-u", "-m", "sudgitsync-auto-stash"]
             )
             if not stash_succes:
-                logs.append(f"  ❌ \033[91mErreur lors du git stash : {stash_out}\033[0m")
+                logs.append(
+                    f"  {E['ERROR']} \033[91mErreur lors du git stash : {stash_out}\033[0m"
+                )
                 return False, logs
             stash_effectue = True
-            logs.append("  ✅ \033[92mChangements locaux mis en stash.\033[0m")
+            logs.append(
+                f"  {E['SUCCESS']} \033[92mChangements locaux mis en stash.\033[0m"
+            )
 
     # 8. Checkout vers la branche cible si on n'y est pas
     if not sur_bonne_branche:
         logs.append(
-            f"  🔀 Branche courante (\033[96m{branche_courante}\033[0m) ≠ cible (\033[96m{branche_cible}\033[0m) — checkout en cours..."
+            f"  {E['SHUFFLE']} Branche courante (\033[96m{branche_courante}\033[0m) ≠ cible (\033[96m{branche_cible}\033[0m) — checkout en cours..."
         )
         checkout_succes, checkout_out = executer_commande_git(
             chemin, ["checkout", branche_cible]
         )
         if not checkout_succes:
-            logs.append(f"  ❌ \033[91mErreur lors du checkout : {checkout_out}\033[0m")
+            logs.append(
+                f"  {E['ERROR']} \033[91mErreur lors du checkout : {checkout_out}\033[0m"
+            )
             if stash_effectue:
                 executer_commande_git(chemin, ["stash", "pop"])
                 logs.append(
-                    "  ↩️  \033[93mStash restauré suite à l'échec du checkout.\033[0m"
+                    f"  {E['RETURN']}  \033[93mStash restauré suite à l'échec du checkout.\033[0m"
                 )
             return False, logs
         checkout_effectue = True
 
     # 9. Git Pull
     logs.append(
-        "  📥 \033[93mMises à jour distantes trouvées, exécution de git pull...\033[0m"
+        f"  {E['INBOX']} \033[93mMises à jour distantes trouvées, exécution de git pull...\033[0m"
     )
     if pull_explicite:
         pull_succes, pull_out = executer_commande_git(
@@ -446,31 +547,35 @@ def syncer_depot(d):
             or "déjà à jour" in pull_out.lower()
             or "already up-to-date" in pull_out.lower()
         ):
-            logs.append("  ✅ \033[92mDépôt déjà à jour.\033[0m")
+            logs.append(f"  {E['SUCCESS']} \033[92mDépôt déjà à jour.\033[0m")
         else:
-            logs.append("  ✅ \033[92mMis à jour avec succès.\033[0m")
+            logs.append(f"  {E['SUCCESS']} \033[92mMis à jour avec succès.\033[0m")
         resultat_ok = True
     else:
-        logs.append(f"  ❌ \033[91mErreur lors du git pull : {pull_out}\033[0m")
+        logs.append(
+            f"  {E['ERROR']} \033[91mErreur lors du git pull : {pull_out}\033[0m"
+        )
 
     # 10. Retour sur la branche d'origine si on a switche
     if checkout_effectue:
         logs.append(
-            f"  🔀 Retour sur la branche d'origine : \033[96m{branche_courante}\033[0m"
+            f"  {E['SHUFFLE']} Retour sur la branche d'origine : \033[96m{branche_courante}\033[0m"
         )
         executer_commande_git(chemin, ["checkout", branche_courante])
 
     # 11. Restauration du stash
     if stash_effectue:
         logs.append(
-            "  📤 \033[93mRestauration des changements locaux (git stash pop)...\033[0m"
+            f"  {E['OUTBOX']} \033[93mRestauration des changements locaux (git stash pop)...\033[0m"
         )
         pop_succes, pop_out = executer_commande_git(chemin, ["stash", "pop"])
         if pop_succes:
-            logs.append("  ✅ \033[92mChangements locaux restaurés avec succès.\033[0m")
+            logs.append(
+                f"  {E['SUCCESS']} \033[92mChangements locaux restaurés avec succès.\033[0m"
+            )
         else:
             logs.append(
-                f"  ⚠️  \033[93mAvertissement lors du stash pop (conflit possible) : {pop_out}\033[0m"
+                f"  {E['WARN']}  \033[93mAvertissement lors du stash pop (conflit possible) : {pop_out}\033[0m"
             )
 
     return resultat_ok, logs
@@ -481,15 +586,17 @@ def lancer_sync():
     depots = config.get("depots", [])
 
     if not depots:
-        print(
-            "\n⚠️  \033[93mAucun dépôt configuré. Veuillez configurer des dépôts dans le menu 2.\033[0m"
+        safe_print(
+            f"\n{E['WARN']}  \033[93mAucun dépôt configuré. Veuillez configurer des dépôts dans le menu 2.\033[0m"
         )
         return
 
     parallelisme = config.get("parallelisme", 5)
     workers = min(parallelisme, len(depots))
 
-    print(f"\n\033[94m🚀 Lancement de la synchronisation (GitSync) — {workers} thread(s) en parallèle...\033[0m")
+    safe_print(
+        f"\n\033[94m{E['ROCKET']} Lancement de la synchronisation (GitSync) — {workers} thread(s) en parallèle...\033[0m"
+    )
 
     succes = 0
     echecs = 0
@@ -502,19 +609,21 @@ def lancer_sync():
             # Impression atomique : tous les logs du dépôt d'un seul coup
             with _print_lock:
                 for ligne in logs:
-                    print(ligne)
+                    safe_print(ligne)
             if ok:
                 succes += 1
             else:
                 echecs += 1
 
     duree = time.time() - debut
-    print("\n" + "=" * 45)
-    print("📊 \033[1mBilan final de la GitSync :\033[0m")
-    print(f"  ✅ \033[92mDépôts à jour ou mis à jour : {succes}\033[0m")
-    print(f"  ❌ \033[91mDépôts en échec ou ignorés  : {echecs}\033[0m")
-    print(f"  ⏱️  Durée totale : \033[93m{duree:.1f}s\033[0m")
-    print("=" * 45)
+    safe_print("\n" + "=" * 45)
+    safe_print(f"{E['CHART']} \033[1mBilan final de la GitSync :\033[0m")
+    safe_print(
+        f"  {E['SUCCESS']} \033[92mDépôts à jour ou mis à jour : {succes}\033[0m"
+    )
+    safe_print(f"  {E['ERROR']} \033[91mDépôts en échec ou ignorés  : {echecs}\033[0m")
+    safe_print(f"  {E['STOPWATCH']}  Durée totale : \033[93m{duree:.1f}s\033[0m")
+    safe_print("=" * 45)
 
 
 def lancer_sync_continu():
@@ -522,23 +631,23 @@ def lancer_sync_continu():
     depots = config.get("depots", [])
 
     if not depots:
-        print(
-            "\n⚠️  \033[93mAucun dépôt configuré. Veuillez configurer des dépôts dans le menu 3.\033[0m"
+        safe_print(
+            f"\n{E['WARN']}  \033[93mAucun dépôt configuré. Veuillez configurer des dépôts dans le menu 3.\033[0m"
         )
         return
 
     intervalle = config.get("intervalle", 60)
-    print(
-        f"\n\033[94m🔄 Mode de synchronisation continue activé (intervalle : {intervalle}s).\033[0m"
+    safe_print(
+        f"\n\033[94m{E['SYNC']} Mode de synchronisation continue activé (intervalle : {intervalle}s).\033[0m"
     )
-    print("\033[93mAppuyez sur Ctrl+C pour arrêter et quitter.\033[0m\n")
+    safe_print("\033[93mAppuyez sur Ctrl+C pour arrêter et quitter.\033[0m\n")
 
     try:
         iteration = 1
         while True:
-            print(f"\n\033[95m--- 🔄 Itération n°{iteration} ---\033[0m")
+            safe_print(f"\n\033[95m--- {E['SYNC']} Itération n°{iteration} ---\033[0m")
             lancer_sync()
-            print(
+            safe_print(
                 f"\n\033[90m[Attente de {intervalle} secondes avant la prochaine vérification...]\033[0m"
             )
             time.sleep(intervalle)
@@ -561,14 +670,14 @@ def main():
             config = charger_config()
             intervalle = config.get("intervalle", 60)
             parallelisme = config.get("parallelisme", 5)
-            print("\n\033[95m--- 🧭 Menu Principal ---\033[0m")
-            print("1. 🚀 Lancement unique")
-            print(f"2. 🔄 Lancement continu ({intervalle}s)")
-            print("3. ⚙️  Configurer les dossiers à vérifier")
-            print("0. 🚪 Quitter")
-            print(f"\n\033[90m[Parallélisme : {parallelisme} thread(s)]\033[0m")
+            safe_print(f"\n\033[95m--- {E['COMPASS']} Menu Principal ---\033[0m")
+            safe_print(f"1. {E['ROCKET']} Lancement unique")
+            safe_print(f"2. {E['SYNC']} Lancement continu ({intervalle}s)")
+            safe_print(f"3. {E['GEAR']}  Configurer les dossiers à vérifier")
+            safe_print(f"0. {E['DOOR']} Quitter")
+            safe_print(f"\n\033[90m[Parallélisme : {parallelisme} thread(s)]\033[0m")
 
-            choix = input("\n👉 Votre choix (0-3) : ").strip()
+            choix = input(f"\n{E['POINTER']} Votre choix (0-3) : ").strip()
 
             if choix == "1":
                 lancer_sync()
@@ -577,20 +686,24 @@ def main():
             elif choix == "3":
                 configurer_depots()
             elif choix == "0":
-                print(
-                    "\n👋 \033[96mMerci d'avoir utilisé SudGit Sync. À bientôt !\033[0m\n"
+                safe_print(
+                    f"\n{E['BYE']} \033[96mMerci d'avoir utilisé SudGit Sync. À bientôt !\033[0m\n"
                 )
                 break
             else:
-                print("❌ \033[91mChoix invalide, veuillez réessayer.\033[0m")
+                safe_print(
+                    f"{E['ERROR']} \033[91mChoix invalide, veuillez réessayer.\033[0m"
+                )
 
         except KeyboardInterrupt:
-            print(
-                "\n\n⚠️  \033[93mInterruption détectée (Ctrl+C). Fermeture de SudGit Sync.\033[0m\n"
+            safe_print(
+                f"\n\n{E['WARN']}  \033[93mInterruption détectée (Ctrl+C). Fermeture de SudGit Sync.\033[0m\n"
             )
             sys.exit(0)
         except Exception as e:
-            print(f"\n❌ \033[91mUne erreur inattendue s'est produite : {e}\033[0m\n")
+            safe_print(
+                f"\n{E['ERROR']} \033[91mUne erreur inattendue s'est produite : {e}\033[0m\n"
+            )
 
 
 if __name__ == "__main__":
