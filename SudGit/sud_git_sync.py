@@ -125,13 +125,13 @@ def configurer_depots():
         print("4. ✏️  Modifier la branche d'un dossier")
         print("5. ⏱️  Modifier l'intervalle de sync (Mode Continu)")
         print("6. ⚡ Modifier le nombre de dépôts en parallèle")
-        print("7. 🔙 Retour au menu principal")
+        print("0. 🔙 Retour au menu principal")
 
-        choix = input("\n👉 Votre choix (1-7) : ").strip()
+        choix = input("\n👉 Votre choix (0-6) : ").strip()
 
         if choix == "1":
-            chemin = input("Chemin absolu ou relatif du dépôt git : ").strip()
-            if not chemin:
+            chemin = input("Chemin absolu ou relatif du dépôt git (0 pour annuler) : ").strip()
+            if not chemin or chemin == "0":
                 continue
 
             chemin_abs = os.path.abspath(chemin)
@@ -165,8 +165,8 @@ def configurer_depots():
             print("✅ \033[92mDépôt configuré avec succès.\033[0m")
 
         elif choix == "2":
-            parent = input("Dossier parent à scanner (ex: C:/Dev/Projets) : ").strip()
-            if not parent:
+            parent = input("Dossier parent à scanner (ex: C:/Dev/Projets, 0 pour annuler) : ").strip()
+            if not parent or parent == "0":
                 continue
 
             parent_abs = os.path.abspath(parent)
@@ -211,9 +211,10 @@ def configurer_depots():
                 print("⚠️  \033[93mAucun dépôt à supprimer.\033[0m")
                 continue
             try:
-                idx = (
-                    int(input(f"Numéro du dépôt à supprimer (1-{len(depots)}) : ")) - 1
-                )
+                entree = input(f"Numéro du dépôt à supprimer (1-{len(depots)}, 0 pour annuler) : ").strip()
+                if entree == "0":
+                    continue
+                idx = int(entree) - 1
                 if 0 <= idx < len(depots):
                     supprime = depots.pop(idx)
                     config["depots"] = depots
@@ -229,7 +230,10 @@ def configurer_depots():
                 print("⚠️  \033[93mAucun dépôt à modifier.\033[0m")
                 continue
             try:
-                idx = int(input(f"Numéro du dépôt à modifier (1-{len(depots)}) : ")) - 1
+                entree = input(f"Numéro du dépôt à modifier (1-{len(depots)}, 0 pour annuler) : ").strip()
+                if entree == "0":
+                    continue
+                idx = int(entree) - 1
                 if 0 <= idx < len(depots):
                     nouvelle_branche = input(
                         "Nouvelle branche cible (laissez vide pour auto-détection) : "
@@ -245,9 +249,10 @@ def configurer_depots():
 
         elif choix == "5":
             try:
-                nouveau_temps = int(
-                    input("Entrez le nouvel intervalle en secondes (min 10) : ")
-                )
+                entree = input("Entrez le nouvel intervalle en secondes (min 10, 0 pour annuler) : ").strip()
+                if entree == "0":
+                    continue
+                nouveau_temps = int(entree)
                 if nouveau_temps < 10:
                     print(
                         "⚠️  \033[93mIntervalle trop court (min 10s pour éviter le spam).\033[0m"
@@ -263,11 +268,10 @@ def configurer_depots():
 
         elif choix == "6":
             try:
-                val = int(
-                    input(
-                        "Nombre de dépôts à traiter en parallèle (1 = séquentiel, défaut 5) : "
-                    )
-                )
+                entree = input("Nombre de dépôts à traiter en parallèle (1 = séquentiel, défaut 5, 0 pour annuler) : ").strip()
+                if entree == "0":
+                    continue
+                val = int(entree)
                 if val < 1:
                     print("⚠️  \033[93mValeur trop basse, minimum 1.\033[0m")
                     val = 1
@@ -279,7 +283,7 @@ def configurer_depots():
                     "❌ \033[91mEntrée invalide, veuillez saisir un nombre entier.\033[0m"
                 )
 
-        elif choix == "7":
+        elif choix == "0":
             break
         else:
             print("❌ \033[91mOption invalide.\033[0m")
@@ -561,10 +565,10 @@ def main():
             print("1. 🚀 Lancement unique")
             print(f"2. 🔄 Lancement continu ({intervalle}s)")
             print("3. ⚙️  Configurer les dossiers à vérifier")
-            print("4. 🚪 Quitter")
+            print("0. 🚪 Quitter")
             print(f"\n\033[90m[Parallélisme : {parallelisme} thread(s)]\033[0m")
 
-            choix = input("\n👉 Votre choix (1-4) : ").strip()
+            choix = input("\n👉 Votre choix (0-3) : ").strip()
 
             if choix == "1":
                 lancer_sync()
@@ -572,7 +576,7 @@ def main():
                 lancer_sync_continu()
             elif choix == "3":
                 configurer_depots()
-            elif choix == "4":
+            elif choix == "0":
                 print(
                     "\n👋 \033[96mMerci d'avoir utilisé SudGit Sync. À bientôt !\033[0m\n"
                 )
