@@ -32,24 +32,97 @@ def format_size(size_in_bytes):
 def get_folder_size(folder_path):
     total_size = 0
     file_count = 0
+
     for root, dirs, files in os.walk(folder_path):
         # Filtrage intelligent des dossiers
         dirs[:] = [d for d in dirs if d not in EXCLUDE_PATTERNS]
+
         for f in files:
             if f not in EXCLUDE_PATTERNS:
                 fp = os.path.join(root, f)
                 total_size += os.path.getsize(fp)
                 file_count += 1
+
     return total_size, file_count
 
 
 def estimate_ultra_time(size_bytes):
-    # Basé sur une moyenne conservatrice de 5 Mo/s pour LZMA (dépend du CPU)
+    # Basé sur une moyenne conservatrice de 5 Mo/s pour LZMA
     seconds = size_bytes / (5 * 1024 * 1024)
+
     if seconds < 60:
         return f"env. {int(seconds)} secondes"
     else:
-        return f"env. {int(seconds/60)} minute(s)"
+        return f"env. {int(seconds / 60)} minute(s)"
+
+
+def clean_input_path(value):
+    return value.strip().replace('"', "").replace("'", "")
+
+
+def resolve_archive_output_path(output_input, default_output_dir, default_filename, expected_ext):
+    """
+    Résout le chemin final de l'archive.
+
+    - Si output_input est vide :
+      -> archive à côté du dossier source.
+
+    - Si output_input désigne un dossier :
+      -> archive dans ce dossier avec le nom généré automatiquement.
+
+    - Si output_input désigne un fichier avec extension :
+      -> archive à ce chemin exact, avec extension corrigée si nécessaire.
+
+    - Si output_input est relatif :
+      -> chemin résolu depuis le répertoire courant.
+    """
+
+    default_output_dir = Path(default_output_dir).resolve()
+
+    if not output_input:
+        return default_output_dir / default_filename
+
+    candidate = Path(output_input).expanduser()
+
+    if not candidate.is_absolute():
+        candidate = (Path.cwd() / candidate).resolve()
+
+    # Cas 1 : chemin existant et dossier
+    if candidate.exists() and candidate.is_dir():
+        output_dir = candidate
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir / default_filename
+
+    # Cas 2 : chemin avec extension => considéré comme un fichier de sortie
+    if candidate.suffix:
+        output_file = candidate
+
+        # Correction automatique de l'extension si elle ne correspond pas au mode choisi
+        if not output_file.name.lower().endswith(expected_ext.lower()):
+            output_file = output_file.with_suffix(expected_ext)
+
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        return output_file
+
+    # Cas 3 : chemin sans extension => considéré comme un dossier de sortie
+    output_dir = candidate
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / default_filename
+
+
+def print_progress(processed_files, file_count):
+    if file_count == 0:
+        return
+
+    percent = (processed_files / file_count) * 100
+    bar_length = 30
+    filled = int(bar_length * processed_files // file_count)
+    bar = "█" * filled + "░" * (bar_length - filled)
+
+    print(
+        f"\r[Compression] |{bar}| {percent:.1f}% ({processed_files}/{file_count})",
+        end=""
+    )
 
 
 def compress_folder():
@@ -63,11 +136,8 @@ def compress_folder():
     """
     )
 
-    target_folder = (
+    target_folder = clean_input_path(
         input("📂 Dossier à compresser (glissez-déposer ou nom) : ")
-        .strip()
-        .replace('"', "")
-        .replace("'", "")
     )
 
     if not os.path.isdir(target_folder):
@@ -100,62 +170,95 @@ def compress_folder():
     if mode == "1":
         ext = ".zip"
         comp_type = zipfile.ZIP_DEFLATED
-        level = 6  # Niveau standard
+        level = 6
         mode_label = "Classique"
+
     elif mode == "2":
         ext = ".zip"
         comp_type = zipfile.ZIP_BZIP2
-        level = 9  # Maximum pour Bzip2
+        level = 9
         mode_label = "Medium"
+
     elif mode == "3":
         ext = ".tar.xz"
         mode_label = "Ultra"
+
         print(
             f"\n⚠️  [Mode ULTRA] L'estimation de temps est de {estimate_ultra_time(total_size)}."
         )
         confirm = input("Voulez-vous continuer ? (o/n) : ").strip().lower()
+
         if confirm != "o":
             print("Opération annulée.")
             return
+
     else:
         print("[Erreur] Choix invalide.")
         return
 
     output_filename = f"{folder_name}_Archive_{timestamp}{ext}"
-    output_path = os.path.join(
-        os.path.dirname(os.path.abspath(target_folder)), output_filename
+
+    print("\n" + "=" * 50)
+    print("📁 SORTIE DE L'ARCHIVE")
+    print("=" * 50)
+
+    output_input = clean_input_path(
+        input(
+            "Chemin de sortie, absolu ou relatif "
+            "(Entrée = archive à côté du dossier source) : "
+        )
     )
 
+    default_output_dir = Path(target_folder).resolve().parent
+
+    try:
+        output_path = resolve_archive_output_path(
+            output_input=output_input,
+            default_output_dir=default_output_dir,
+            default_filename=output_filename,
+            expected_ext=ext,
+        )
+    except Exception as e:
+        print(f"[Erreur] Impossible de préparer le chemin de sortie : {e}")
+        return
+
     start_time = time.time()
-    print(f"\n[Compression] Mode {mode_label} en cours vers {output_filename}...")
+    print(f"\n[Compression] Mode {mode_label} en cours vers :")
+    print(f"{output_path}")
 
     try:
         processed_files = 0
 
         if ext == ".zip":
             with zipfile.ZipFile(
-                output_path, "w", compression=comp_type, compresslevel=level
+                output_path,
+                "w",
+                compression=comp_type,
+                compresslevel=level,
             ) as zipf:
                 for root, dirs, files in os.walk(target_folder):
                     dirs[:] = [d for d in dirs if d not in EXCLUDE_PATTERNS]
+
                     for file in files:
                         if file in EXCLUDE_PATTERNS:
                             continue
+
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, target_folder)
+
                         zipf.write(file_path, arcname)
+
                         processed_files += 1
+
                         if processed_files % 10 == 0 or processed_files == file_count:
-                            percent = (processed_files / file_count) * 100
-                            bar_length = 30
-                            filled = int(bar_length * processed_files // file_count)
-                            bar = "█" * filled + "░" * (bar_length - filled)
-                            print(f"\r[Compression] |{bar}| {percent:.1f}% ({processed_files}/{file_count})", end="")
+                            print_progress(processed_files, file_count)
 
             # Vérification d'intégrité ZIP
             print("\n[Vérification] Analyse de l'intégrité du ZIP...")
+
             with zipfile.ZipFile(output_path, "r") as zipf:
                 bad_file = zipf.testzip()
+
                 if bad_file:
                     print(
                         f"❌ [Erreur] Archive corrompue détectée au fichier : {bad_file}"
@@ -163,25 +266,27 @@ def compress_folder():
                 else:
                     print("✅ [Vérification] Archive ZIP valide.")
 
-        else:  # Ultra mode (.tar.xz)
+        else:
+            # Mode Ultra (.tar.xz)
             with tarfile.open(output_path, "w:xz") as tar:
-                # Note: tar.add n'a pas de compteur facile, on liste manuellement
                 for root, dirs, files in os.walk(target_folder):
                     dirs[:] = [d for d in dirs if d not in EXCLUDE_PATTERNS]
+
                     for file in files:
                         if file in EXCLUDE_PATTERNS:
                             continue
+
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, target_folder)
+
                         tar.add(file_path, arcname=arcname)
+
                         processed_files += 1
+
                         if processed_files % 5 == 0 or processed_files == file_count:
-                            percent = (processed_files / file_count) * 100
-                            bar_length = 30
-                            filled = int(bar_length * processed_files // file_count)
-                            bar = "█" * filled + "░" * (bar_length - filled)
-                            print(f"\r[Compression] |{bar}| {percent:.1f}% ({processed_files}/{file_count})", end="")
-            print(f"\n✅ [Vérification] Archive TAR.XZ créée.")
+                            print_progress(processed_files, file_count)
+
+            print("\n✅ [Vérification] Archive TAR.XZ créée.")
 
         end_time = time.time()
         final_size = os.path.getsize(output_path)
@@ -198,7 +303,8 @@ def compress_folder():
 
     except Exception as e:
         print(f"\n❌ [Erreur Fatale] : {e}")
-        if os.path.exists(output_path):
+
+        if "output_path" in locals() and os.path.exists(output_path):
             os.remove(output_path)
 
 
