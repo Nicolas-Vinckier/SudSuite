@@ -1,4 +1,5 @@
 import os
+import re
 import zipfile
 import tarfile
 import time
@@ -58,6 +59,20 @@ def estimate_ultra_time(size_bytes):
 
 def clean_input_path(value):
     return value.strip().replace('"', "").replace("'", "")
+
+
+def get_archive_base_name(folder_name):
+    """
+    Retourne le nom de base du dossier pour générer une archive.
+
+    Si le dossier correspond déjà à une archive extraite, par exemple :
+    1-Rédaction_Archive_20260608_114357
+
+    Le suffixe d'archive existant est retiré afin de générer :
+    1-Rédaction_Archive_<nouvelle_date>
+    """
+
+    return re.sub(r"(?:_Archive_\d{8}_\d{6})+$", "", folder_name)
 
 
 def resolve_archive_output_path(output_input, default_output_dir, default_filename, expected_ext):
@@ -196,7 +211,8 @@ def compress_folder():
         print("[Erreur] Choix invalide.")
         return
 
-    output_filename = f"{folder_name}_Archive_{timestamp}{ext}"
+    archive_base_name = get_archive_base_name(folder_name)
+    output_filename = f"{archive_base_name}_Archive_{timestamp}{ext}"
 
     print("\n" + "=" * 50)
     print("📁 SORTIE DE L'ARCHIVE")
