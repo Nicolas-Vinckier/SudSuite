@@ -4,6 +4,7 @@ import tarfile
 import time
 import datetime
 import sys
+import argparse
 from pathlib import Path
 
 # --- CONFIGURATION ---
@@ -125,7 +126,7 @@ def print_progress(processed_files, file_count):
     )
 
 
-def compress_folder():
+def compress_folder(cli_args=None):
     print(
         r"""
  ____            _    _             _     _           
@@ -136,9 +137,12 @@ def compress_folder():
     """
     )
 
-    target_folder = clean_input_path(
-        input("📂 Dossier à compresser (glissez-déposer ou nom) : ")
-    )
+    if cli_args and cli_args.input:
+        target_folder = clean_input_path(cli_args.input)
+    else:
+        target_folder = clean_input_path(
+            input("📂 Dossier à compresser (glissez-déposer ou nom) : ")
+        )
 
     if not os.path.isdir(target_folder):
         print(f"[Erreur] '{target_folder}' n'est pas un dossier valide.")
@@ -155,14 +159,17 @@ def compress_folder():
         f"[Note] Les dossiers inutiles ({', '.join(list(EXCLUDE_PATTERNS)[:3])}...) seront ignorés."
     )
 
-    print("\n" + "=" * 50)
-    print("🚀 MODES DE COMPRESSION")
-    print("=" * 50)
-    print("1. CLASSIQUE (Rapide, ZIP Deflate)")
-    print("2. MEDIUM    (Équilibré, ZIP Bzip2)")
-    print("3. ULTRA     (Maximum, Format .tar.xz / LZMA)")
+    if cli_args and cli_args.mode:
+        mode = cli_args.mode
+    else:
+        print("\n" + "=" * 50)
+        print("🚀 MODES DE COMPRESSION")
+        print("=" * 50)
+        print("1. CLASSIQUE (Rapide, ZIP Deflate)")
+        print("2. MEDIUM    (Équilibré, ZIP Bzip2)")
+        print("3. ULTRA     (Maximum, Format .tar.xz / LZMA)")
 
-    mode = input("\nVotre choix (1, 2 ou 3) : ").strip()
+        mode = input("\nVotre choix (1, 2 ou 3) : ").strip()
 
     # Paramètres selon le mode
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -186,11 +193,14 @@ def compress_folder():
         print(
             f"\n⚠️  [Mode ULTRA] L'estimation de temps est de {estimate_ultra_time(total_size)}."
         )
-        confirm = input("Voulez-vous continuer ? (o/n) : ").strip().lower()
+        if cli_args and cli_args.mode:
+            pass
+        else:
+            confirm = input("Voulez-vous continuer ? (o/n) : ").strip().lower()
 
-        if confirm != "o":
-            print("Opération annulée.")
-            return
+            if confirm != "o":
+                print("Opération annulée.")
+                return
 
     else:
         print("[Erreur] Choix invalide.")
@@ -198,16 +208,19 @@ def compress_folder():
 
     output_filename = f"{folder_name}_Archive_{timestamp}{ext}"
 
-    print("\n" + "=" * 50)
-    print("📁 SORTIE DE L'ARCHIVE")
-    print("=" * 50)
+    if cli_args and cli_args.output is not None:
+        output_input = clean_input_path(cli_args.output)
+    else:
+        print("\n" + "=" * 50)
+        print("📁 SORTIE DE L'ARCHIVE")
+        print("=" * 50)
 
-    output_input = clean_input_path(
-        input(
-            "Chemin de sortie, absolu ou relatif "
-            "(Entrée = archive à côté du dossier source) : "
+        output_input = clean_input_path(
+            input(
+                "Chemin de sortie, absolu ou relatif "
+                "(Entrée = archive à côté du dossier source) : "
+            )
         )
-    )
 
     default_output_dir = Path(target_folder).resolve().parent
 
@@ -310,7 +323,13 @@ def compress_folder():
 
 if __name__ == "__main__":
     try:
-        compress_folder()
+        parser = argparse.ArgumentParser(description="SudMedia Folder Compressor")
+        parser.add_argument("-input", "--input", "-i", help="Dossier à compresser")
+        parser.add_argument("-mode", "--mode", "-m", choices=["1", "2", "3"], help="Mode de compression (1, 2 ou 3)")
+        parser.add_argument("-output", "--output", "-o", help="Chemin de sortie de l'archive")
+        
+        args = parser.parse_args()
+        compress_folder(args)
     except KeyboardInterrupt:
         print("\n\n[Interruption] Opération annulée par l'utilisateur.")
         sys.exit(0)
