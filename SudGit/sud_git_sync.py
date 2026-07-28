@@ -4,6 +4,7 @@ import json
 import subprocess
 import time
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -132,6 +133,65 @@ def executer_commande_git(repo_path, commande):
         return False, str(e)
 
 
+def detecter_branche_depot(repo_path):
+    """
+    Détecte la branche par défaut d'un dépôt Git local.
+    Recherche d'abord la branche pointeur distante (origin/HEAD),
+    puis les branches distantes/locales standards (SudBranch, main, master...),
+    et enfin la branche courante.
+    """
+    if not os.path.exists(repo_path) or not os.path.isdir(
+        os.path.join(repo_path, ".git")
+    ):
+        return "Inaccessible"
+
+    # 1. Branche par défaut distante via origin/HEAD (ex: refs/remotes/origin/HEAD -> origin/SudBranch ou origin/main)
+    ok, out = executer_commande_git(
+        repo_path, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]
+    )
+    if ok and out and out.strip():
+        ref = out.strip()
+        if ref.startswith("origin/"):
+            return ref[7:]
+        return ref
+
+    ok, out = executer_commande_git(
+        repo_path, ["rev-parse", "--abbrev-ref", "origin/HEAD"]
+    )
+    if ok and out and out.strip() and out.strip() != "origin/HEAD":
+        ref = out.strip()
+        if ref.startswith("origin/"):
+            return ref[7:]
+        return ref
+
+    # 2. Recherche parmi les branches distantes (git branch -r) pour les noms standards
+    ok, out = executer_commande_git(repo_path, ["branch", "-r"])
+    if ok and out and out.strip():
+        r_branches = [
+            line.strip().split("/")[-1]
+            for line in out.splitlines()
+            if line.strip() and "->" not in line
+        ]
+        for pref in ["SudBranch", "main", "master", "dev", "develop"]:
+            if pref in r_branches:
+                return pref
+
+    # 3. Recherche parmi les branches locales pour les noms standards
+    ok, out = executer_commande_git(repo_path, ["branch", "--format=%(refname:short)"])
+    if ok and out and out.strip():
+        l_branches = [b.strip() for b in out.splitlines() if b.strip()]
+        for pref in ["SudBranch", "main", "master", "dev", "develop"]:
+            if pref in l_branches:
+                return pref
+
+    # 4. Branche courante (checked out)
+    ok, out = executer_commande_git(repo_path, ["branch", "--show-current"])
+    if ok and out and out.strip():
+        return out.strip()
+
+    return "Inconnue"
+
+
 def configurer_depots():
     global E
     config = charger_config()
@@ -159,9 +219,30 @@ def configurer_depots():
                 else:
                     display_path = chemin
 
-                branche = d.get("branche") or "\033[90mAuto-détection\033[96m"
+                branche_config = d.get("branche")
+                if branche_config:
+                    visible_text = branche_config
+                    if len(visible_text) > 18:
+                        visible_text = visible_text[:15] + "..."
+                    padding = " " * (18 - len(visible_text))
+                    display_branche = f"\033[96m{visible_text}\033[0m{padding}"
+                else:
+                    branche_detectee = detecter_branche_depot(chemin)
+                    visible_text = f"{branche_detectee} (auto)"
+                    if len(visible_text) > 18:
+                        max_b_len = 18 - 7
+                        if max_b_len > 3:
+                            branche_detectee = branche_detectee[: max_b_len - 3] + "..."
+                        else:
+                            branche_detectee = branche_detectee[:max_b_len]
+                        visible_text = f"{branche_detectee} (auto)"
+                    padding = " " * (18 - len(visible_text))
+                    display_branche = (
+                        f"\033[96m{branche_detectee}\033[90m (auto)\033[0m{padding}"
+                    )
+
                 safe_print(
-                    f"\033[96m│\033[0m {i:<2} \033[96m│\033[0m {display_path:<48} \033[96m│\033[0m {branche:<18} \033[96m│\033[0m"
+                    f"\033[96m│\033[0m {i:<2} \033[96m│\033[0m {display_path:<48} \033[96m│\033[0m {display_branche} \033[96m│\033[0m"
                 )
             safe_print(
                 "\033[96m└────┴──────────────────────────────────────────────────┴────────────────────┘\033[0m"
@@ -180,9 +261,9 @@ def configurer_depots():
             safe_print(f"{E['SHUFFLE']} Émojis : {status_emojis}")
 
         safe_print("\nOptions :")
-        safe_print(f"1. {E['PLUS']} Ajouter un dossier individuel")
+        safe_print(f"1. {E['PLUS']} Ajouter un dossier")
         safe_print(f"2. {E['MINUS']} Supprimer un dossier")
-        safe_print(f"3. {E['SEARCH']} Scan de dossier parent (Ajout en masse)")
+        safe_print(f"3. {E['SEARCH']} Scan de dossier parent")
         safe_print(f"4. {E['PENCIL']}  Modifier la branche d'un dossier")
         safe_print(f"5. {E['STOPWATCH']}  Modifier l'intervalle de sync (Mode Continu)")
         safe_print(f"6. {E['LIGHTNING']} Modifier le nombre de dépôts en parallèle")
@@ -268,30 +349,55 @@ def configurer_depots():
             safe_print(f"{E['HOURGLASS']} Scan de {parent_abs} en cours...")
             trouves = 0
             ajoutes = 0
+            enleves = 0
 
             try:
+                parent_norm = os.path.normcase(parent_abs)
+                dossiers_presents = []
+                dossiers_presents_norm = set()
+
                 for item in os.listdir(parent_abs):
-                    item_path = os.path.join(parent_abs, item)
-                    # On vérifie si c'est un dossier et s'il contient un .git
+                    item_path = os.path.abspath(os.path.join(parent_abs, item))
                     if os.path.isdir(item_path) and os.path.isdir(
                         os.path.join(item_path, ".git")
                     ):
-                        trouves += 1
-                        # On vérifie s'il est déjà dans la config
-                        if not any(d["chemin"] == item_path for d in depots):
-                            depots.append({"chemin": item_path, "branche": ""})
-                            ajoutes += 1
+                        dossiers_presents.append(item_path)
+                        dossiers_presents_norm.add(os.path.normcase(item_path))
 
-                if trouves > 0:
+                trouves = len(dossiers_presents)
+
+                # Ajout des nouveaux dépôts Git trouvés
+                existing_depots_norm = {
+                    os.path.normcase(os.path.abspath(d["chemin"])) for d in depots
+                }
+                for item_path in dossiers_presents:
+                    if os.path.normcase(item_path) not in existing_depots_norm:
+                        depots.append({"chemin": item_path, "branche": ""})
+                        ajoutes += 1
+
+                # Suppression des dépôts sous ce dossier parent qui n'y sont plus
+                nouveau_depots = []
+                for d in depots:
+                    d_abs = os.path.abspath(d["chemin"])
+                    d_parent_norm = os.path.normcase(os.path.dirname(d_abs))
+                    if d_parent_norm == parent_norm:
+                        if os.path.normcase(d_abs) in dossiers_presents_norm:
+                            nouveau_depots.append(d)
+                        else:
+                            enleves += 1
+                    else:
+                        nouveau_depots.append(d)
+
+                depots = nouveau_depots
+
+                if ajoutes > 0 or enleves > 0:
                     config["depots"] = depots
                     sauvegarder_config(config)
-                    safe_print(f"{E['SUCCESS']} \033[92mScan terminé !\033[0m")
-                    safe_print(f"   {E['SEARCH']} Dépôts Git détectés : {trouves}")
-                    safe_print(f"   {E['PLUS']} Nouveaux dépôts ajoutés : {ajoutes}")
-                else:
-                    safe_print(
-                        f"{E['WARN']}  \033[93mAucun sous-dossier contenant un dépôt Git (.git) n'a été trouvé.\033[0m"
-                    )
+
+                safe_print(f"{E['SUCCESS']} \033[92mScan terminé !\033[0m")
+                safe_print(f"   {E['SEARCH']} Dépôts Git détectés : {trouves}")
+                safe_print(f"   {E['PLUS']} Nouveaux dépôts ajoutés : {ajoutes}")
+                safe_print(f"   {E['MINUS']} Dépôts retirés (non trouvés) : {enleves}")
             except Exception as e:
                 safe_print(f"{E['ERROR']} \033[91mErreur lors du scan : {e}\033[0m")
 
@@ -380,10 +486,68 @@ def configurer_depots():
             safe_print(f"{E['ERROR']} \033[91mOption invalide.\033[0m")
 
 
+def push_custom_stash(repo_path):
+    """
+    Met en stash les modifications locales (staged + unstaged + untracked)
+    avec un identifiant unique pour ne pas impacter les autres stashes.
+    Retourne (succès, stash_tag).
+    """
+    ok_status, out_status = executer_commande_git(repo_path, ["status", "--porcelain"])
+    if not ok_status or not out_status.strip():
+        # Rien à stasher
+        return True, None
+
+    stash_tag = f"sudgit-stash-{uuid.uuid4().hex[:8]}"
+    ok_stash, out_stash = executer_commande_git(
+        repo_path, ["stash", "push", "-u", "-m", stash_tag]
+    )
+    if not ok_stash:
+        return False, None
+
+    ok_list, out_list = executer_commande_git(repo_path, ["stash", "list"])
+    if ok_list and stash_tag in out_list:
+        return True, stash_tag
+
+    return False, None
+
+
+def pop_custom_stash(repo_path, stash_tag):
+    """
+    Restaure exactement le stash correspondant à stash_tag par son index stash@{N}.
+    """
+    if not stash_tag:
+        return True, "Aucun stash à restaurer."
+
+    ok_list, out_list = executer_commande_git(repo_path, ["stash", "list"])
+    if not ok_list or not out_list:
+        return False, "Impossible d'obtenir la liste des stashes."
+
+    target_ref = None
+    for line in out_list.splitlines():
+        if stash_tag in line:
+            # Format classique: "stash@{0}: On branch: sudgit-stash-1a2b3c4d"
+            target_ref = line.split(":")[0].strip()
+            break
+
+    if not target_ref:
+        return False, f"Stash introuvable ({stash_tag})."
+
+    ok_pop, out_pop = executer_commande_git(repo_path, ["stash", "pop", target_ref])
+    return ok_pop, out_pop
+
+
 def syncer_depot(d):
     """
-    Synchronise un seul dépôt git et retourne (succes: bool, logs: list[str]).
-    Cette fonction est conçue pour être exécutée en parallèle dans un thread.
+    Synchronise un dépôt git avec sa branche cible (par défaut ou configurée) :
+    1. Détecte la branche courante (ex: local-security-layer) et la branche cible (ex: SudBranch).
+    2. Exécute git fetch --prune.
+    3. Si la branche cible est déjà à jour avec origin/branche_cible, s'arrête là (pas de stash ni de checkout inutile).
+    4. Si la branche cible a des nouveautés :
+       - Crée un stash nommé sudgit-stash-<uuid> pour les modifications locales non enregistrées.
+       - Bascule sur la branche cible (checkout SudBranch) si nécessaire.
+       - Effectue le pull de la branche cible.
+       - Repasse sur la branche d'origine (checkout local-security-layer).
+       - Restaure le stash spécifique (stash pop stash@{N}).
     """
     logs = []
     chemin = d["chemin"]
@@ -395,30 +559,24 @@ def syncer_depot(d):
         )
         return False, logs
 
-    branche_cible = d.get("branche")
-
-    # 1. Detection de la branche courante (toujours necessaire)
-    bc_succes, branche_courante = executer_commande_git(
+    # 1. Détection de la branche actuellement extraite
+    ok_bc, branche_courante = executer_commande_git(
         chemin, ["branch", "--show-current"]
     )
-    if not bc_succes or not branche_courante:
-        logs.append(
-            f"  {E['ERROR']} \033[91mImpossible de détecter la branche courante.\033[0m"
+    if not ok_bc or not branche_courante:
+        ok_head, out_head = executer_commande_git(
+            chemin, ["rev-parse", "--abbrev-ref", "HEAD"]
         )
-        return False, logs
+        branche_courante = out_head if (ok_head and out_head != "HEAD") else "HEAD"
 
-    # 2. Determination de la branche cible
+    # 2. Détermination de la branche cible à synchroniser
+    branche_cible = d.get("branche")
     if not branche_cible:
-        branche_cible = branche_courante
-        logs.append(
-            f"  {E['SEARCH']} Branche détectée automatiquement : \033[96m{branche_cible}\033[0m"
-        )
-    else:
-        logs.append(
-            f"  {E['TARGET']} Branche configurée : \033[96m{branche_cible}\033[0m"
-        )
+        branche_cible = detecter_branche_depot(chemin)
 
-    sur_bonne_branche = branche_courante == branche_cible
+    logs.append(
+        f"  {E['TARGET']} Branche de travail : \033[96m{branche_courante}\033[0m | Branche cible : \033[96m{branche_cible}\033[0m"
+    )
 
     # 3. Git Fetch avec Prune
     logs.append(
@@ -429,153 +587,94 @@ def syncer_depot(d):
         logs.append(f"  {E['ERROR']} \033[91mErreur de fetch : {f_out}\033[0m")
         return False, logs
 
-    # 4. Comparaison de l'etat
-    logs.append(f"  {E['SCALES']}  Comparaison des états local et distant...")
-    status_succes, status_out = executer_commande_git(chemin, ["status", "-uno"])
+    # 4. Comparaison de la branche cible avec son remote
+    ok_local, rev_local = executer_commande_git(chemin, ["rev-parse", branche_cible])
+    ok_remote, rev_remote = executer_commande_git(
+        chemin, ["rev-parse", f"origin/{branche_cible}"]
+    )
 
-    if not status_succes:
+    if ok_local and ok_remote and rev_local == rev_remote:
         logs.append(
-            f"  {E['ERROR']} \033[91mImpossible d'obtenir le statut git : {status_out}\033[0m"
+            f"  {E['SUCCESS']} \033[92mBranche \033[96m{branche_cible}\033[92m déjà à jour.\033[0m"
+        )
+        return True, logs
+
+    logs.append(
+        f"  {E['INBOX']} \033[93mMises à jour distantes détectées sur \033[96m{branche_cible}\033[0m..."
+    )
+
+    # 5. Stash personnalisé des modifications locales (si présentes)
+    stash_ok, stash_tag = push_custom_stash(chemin)
+    if not stash_ok:
+        logs.append(
+            f"  {E['ERROR']} \033[91mErreur lors du stash des modifications locales.\033[0m"
         )
         return False, logs
 
-    out_lower = status_out.lower()
-    besoin_pull = (
-        "behind" in out_lower or "retard" in out_lower or "fast-forwarded" in out_lower
-    )
-    deja_a_jour = "up to date" in out_lower or "à jour" in out_lower
-
-    if deja_a_jour and not besoin_pull:
-        logs.append(f"  {E['SUCCESS']} \033[92mDépôt déjà à jour.\033[0m")
-        return True, logs
-
-    # Mode ambigu : pas d'upstream clairement configure
-    pull_explicite = not besoin_pull and not deja_a_jour
-
-    if pull_explicite:
+    if stash_tag:
         logs.append(
-            f"  {E['WARN']}  \033[93mÉtat ambigu (pas d'upstream détecté), tentative de git pull origin...\033[0m"
+            f"  {E['BOX']} \033[93mModifications locales sauvegardées (Stash ID: {stash_tag})...\033[0m"
         )
 
-    # 5. Detection des fichiers modifies localement (staged + unstaged)
-    _, fichiers_locaux_raw = executer_commande_git(
-        chemin, ["diff", "--name-only", "HEAD"]
-    )
-    _, fichiers_staged_raw = executer_commande_git(
-        chemin, ["diff", "--name-only", "--cached", "HEAD"]
-    )
-    fichiers_locaux = set(
-        (fichiers_locaux_raw or "").splitlines()
-        + (fichiers_staged_raw or "").splitlines()
-    )
-    fichiers_locaux = {f.strip() for f in fichiers_locaux if f.strip()}
-
-    # 6. Detection des fichiers modifies cote distant
-    _, fichiers_distants_raw = executer_commande_git(
-        chemin, ["diff", "--name-only", f"HEAD...origin/{branche_cible}"]
-    )
-    fichiers_distants = {
-        f.strip() for f in (fichiers_distants_raw or "").splitlines() if f.strip()
-    }
-
-    # 7. Verification des conflits potentiels
-    conflits = fichiers_locaux & fichiers_distants
-
-    stash_effectue = False
+    sur_bonne_branche = branche_courante == branche_cible
     checkout_effectue = False
 
-    if fichiers_locaux:
-        if conflits:
-            logs.append(
-                f"  {E['WARN']}  \033[93mConflits potentiels sur {len(conflits)} fichier(s) — pull ignoré (gérez manuellement) :\033[0m"
-            )
-            for f in sorted(conflits):
-                logs.append(f"      \033[91m{E['LIGHTNING']} {f}\033[0m")
-            return False, logs
-        else:
-            logs.append(
-                f"  {E['BOX']} \033[93m{len(fichiers_locaux)} fichier(s) local/locaux sans conflit → git stash en cours...\033[0m"
-            )
-            stash_succes, stash_out = executer_commande_git(
-                chemin, ["stash", "push", "-u", "-m", "sudgitsync-auto-stash"]
-            )
-            if not stash_succes:
-                logs.append(
-                    f"  {E['ERROR']} \033[91mErreur lors du git stash : {stash_out}\033[0m"
-                )
-                return False, logs
-            stash_effectue = True
-            logs.append(
-                f"  {E['SUCCESS']} \033[92mChangements locaux mis en stash.\033[0m"
-            )
-
-    # 8. Checkout vers la branche cible si on n'y est pas
+    # 6. Checkout vers la branche cible si nécessaire
     if not sur_bonne_branche:
         logs.append(
-            f"  {E['SHUFFLE']} Branche courante (\033[96m{branche_courante}\033[0m) ≠ cible (\033[96m{branche_cible}\033[0m) — checkout en cours..."
+            f"  {E['SHUFFLE']} Passage sur la branche \033[96m{branche_cible}\033[0m..."
         )
-        checkout_succes, checkout_out = executer_commande_git(
-            chemin, ["checkout", branche_cible]
-        )
-        if not checkout_succes:
+        co_ok, co_out = executer_commande_git(chemin, ["checkout", branche_cible])
+        if not co_ok:
             logs.append(
-                f"  {E['ERROR']} \033[91mErreur lors du checkout : {checkout_out}\033[0m"
+                f"  {E['ERROR']} \033[91mErreur lors du checkout vers {branche_cible} : {co_out}\033[0m"
             )
-            if stash_effectue:
-                executer_commande_git(chemin, ["stash", "pop"])
-                logs.append(
-                    f"  {E['RETURN']}  \033[93mStash restauré suite à l'échec du checkout.\033[0m"
-                )
+            if stash_tag:
+                pop_custom_stash(chemin, stash_tag)
             return False, logs
         checkout_effectue = True
 
-    # 9. Git Pull
-    logs.append(
-        f"  {E['INBOX']} \033[93mMises à jour distantes trouvées, exécution de git pull...\033[0m"
-    )
-    if pull_explicite:
-        pull_succes, pull_out = executer_commande_git(
-            chemin, ["pull", "origin", branche_cible]
-        )
-    else:
-        pull_succes, pull_out = executer_commande_git(chemin, ["pull"])
+    # 7. Git Pull sur la branche cible
+    logs.append(f"  {E['SYNC']} Synchronisation (git pull origin {branche_cible})...")
+    pull_ok, pull_out = executer_commande_git(chemin, ["pull", "origin", branche_cible])
 
     resultat_ok = False
-    if pull_succes:
-        if (
-            "already up to date" in pull_out.lower()
-            or "déjà à jour" in pull_out.lower()
-            or "already up-to-date" in pull_out.lower()
-        ):
-            logs.append(f"  {E['SUCCESS']} \033[92mDépôt déjà à jour.\033[0m")
-        else:
-            logs.append(f"  {E['SUCCESS']} \033[92mMis à jour avec succès.\033[0m")
+    if pull_ok:
+        logs.append(
+            f"  {E['SUCCESS']} \033[92mBranche \033[96m{branche_cible}\033[92m mise à jour avec succès.\033[0m"
+        )
         resultat_ok = True
     else:
         logs.append(
-            f"  {E['ERROR']} \033[91mErreur lors du git pull : {pull_out}\033[0m"
+            f"  {E['ERROR']} \033[91mErreur lors du pull de {branche_cible} : {pull_out}\033[0m"
         )
 
-    # 10. Retour sur la branche d'origine si on a switche
+    # 8. Retour sur la branche d'origine si on avait changé de branche
     if checkout_effectue:
         logs.append(
-            f"  {E['SHUFFLE']} Retour sur la branche d'origine : \033[96m{branche_courante}\033[0m"
+            f"  {E['SHUFFLE']} Retour sur la branche initiale (\033[96m{branche_courante}\033[0m)..."
         )
-        executer_commande_git(chemin, ["checkout", branche_courante])
-
-    # 11. Restauration du stash
-    if stash_effectue:
-        logs.append(
-            f"  {E['OUTBOX']} \033[93mRestauration des changements locaux (git stash pop)...\033[0m"
+        co_back_ok, co_back_out = executer_commande_git(
+            chemin, ["checkout", branche_courante]
         )
-        pop_succes, pop_out = executer_commande_git(chemin, ["stash", "pop"])
-        if pop_succes:
+        if not co_back_ok:
             logs.append(
-                f"  {E['SUCCESS']} \033[92mChangements locaux restaurés avec succès.\033[0m"
+                f"  {E['WARN']}  \033[93mAvertissement lors du retour sur {branche_courante} : {co_back_out}\033[0m"
+            )
+
+    # 9. Restauration du stash unique créé pour cette opération
+    if stash_tag:
+        logs.append(
+            f"  {E['OUTBOX']} \033[93mRestauration du stash {stash_tag}...\033[0m"
+        )
+        pop_ok, pop_msg = pop_custom_stash(chemin, stash_tag)
+        if pop_ok:
+            logs.append(
+                f"  {E['SUCCESS']} \033[92mModifications locales restaurées avec succès.\033[0m"
             )
         else:
             logs.append(
-                f"  {E['WARN']}  \033[93mAvertissement lors du stash pop (conflit possible) : {pop_out}\033[0m"
+                f"  {E['WARN']}  \033[93mAvertissement lors du stash pop : {pop_msg}\033[0m"
             )
 
     return resultat_ok, logs
