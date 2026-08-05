@@ -1,9 +1,12 @@
 import os
 import io
 import sys
+import warnings
 
 try:
     from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 except ImportError:
     print("[Erreur] La bibliotheque 'Pillow' n'est pas installee.")
     print("Veuillez l'installer avec la commande suivante :")

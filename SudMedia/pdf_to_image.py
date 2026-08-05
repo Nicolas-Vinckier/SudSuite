@@ -4,6 +4,8 @@ import time
 import io
 import shutil
 
+import warnings
+
 # --- COMPATIBILITÉ WINDOWS ---
 if sys.platform == "win32":
     os.system("")
@@ -22,6 +24,9 @@ except ImportError:
 
 try:
     from PIL import Image, ImageChops
+    # Désactiver la limite de pixels de Pillow pour éviter DecompressionBombWarning sur les grands PDF (ex: maquettes / wireframes HD)
+    Image.MAX_IMAGE_PIXELS = None
+    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
@@ -59,7 +64,10 @@ def print_banner():
 
 def get_target_files(paths):
     target_files = []
-    for path in paths:
+    for raw_path in paths:
+        path = raw_path.strip('"\' ')
+        if not path:
+            continue
         if os.path.isdir(path):
             for root, dirs, files in os.walk(path):
                 # Smart Filtering: ignorer les dossiers cachés ou système
@@ -78,7 +86,7 @@ def get_target_files(paths):
             else:
                 print(f"⚠️  Le fichier {os.path.basename(path)} n'est pas un PDF.")
         else:
-            print(f"❌ {path} n'est ni un fichier ni un dossier valide.")
+            print(f"❌ '{path}' n'est ni un fichier ni un dossier valide.")
     return target_files
 
 
@@ -210,9 +218,9 @@ def convert_pdf(
 def main():
     print_banner()
 
-    paths = sys.argv[1:]
+    paths = [p.strip('"\' ') for p in sys.argv[1:] if p.strip('"\' ')]
     if not paths:
-        path_input = input("📂 Entrez le chemin du PDF ou du dossier : ").strip()
+        path_input = input("📂 Entrez le chemin du PDF ou du dossier : ").strip().strip('"\' ')
         if not path_input:
             print("❌ Aucun chemin fourni. Arrêt.")
             sys.exit(0)
@@ -226,7 +234,10 @@ def main():
         print("❌ Aucun fichier PDF trouvé.")
         sys.exit(1)
 
-    print(f"🚀 {len(files)} PDF détecté(s).")
+    if len(files) == 1:
+        print(f"🚀 1 fichier PDF détecté : {os.path.basename(files[0])}")
+    else:
+        print(f"🚀 {len(files)} PDF détecté(s).")
 
     # 2. Paramètres
     print("\n--- 🎯 PARAMÈTRES DE CONVERSION ---")
@@ -260,19 +271,32 @@ def main():
     target_format, target_ext = SUPPORTED_OUTPUT_FORMATS[choix]
 
     # 3. Détermination du dossier de sortie
-    first_arg = paths[0]
-    if os.path.isdir(first_arg):
-        output_dir = first_arg.rstrip("/\\") + "_images"
+    first_path = paths[0]
+    if os.path.isfile(first_path):
+        file_basename_no_ext = os.path.splitext(os.path.basename(first_path))[0]
+        default_output_dir = os.path.join(
+            os.path.dirname(os.path.abspath(first_path)),
+            f"{file_basename_no_ext}_images",
+        )
+    elif os.path.isdir(first_path):
+        default_output_dir = first_path.rstrip("/\\") + "_images"
     else:
-        output_dir = os.path.join(
-            os.path.dirname(os.path.abspath(first_arg)), "pdf_images"
+        default_output_dir = os.path.join(
+            os.path.dirname(os.path.abspath(files[0])), "pdf_images"
         )
 
+    out_dir_input = (
+        input(f"📂 Dossier de sortie [{default_output_dir}] : ")
+        .strip()
+        .strip('"\' ')
+    )
+    output_dir = out_dir_input if out_dir_input else default_output_dir
+
     # 4. Confirmation
-    print(f"\n📂 Dossier de sortie : {output_dir}")
+    print(f"\n📂 Dossier de sortie retenu : {output_dir}")
     confirm = (
         input(
-            f"⚠️  Les PDF seront convertis en {target_format} à {dpi} DPI. Continuer ? (O/n) : "
+            f"⚠️  Les PDF ({len(files)} fichier(s)) seront convertis en {target_format} à {dpi} DPI. Continuer ? (O/n) : "
         )
         .strip()
         .lower()

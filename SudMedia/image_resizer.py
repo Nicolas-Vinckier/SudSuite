@@ -3,6 +3,7 @@ import sys
 import time
 import io
 import shutil
+import warnings
 from datetime import datetime
 
 # --- COMPATIBILITÉ WINDOWS ---
@@ -15,6 +16,8 @@ if sys.platform == "win32":
 
 try:
     from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
@@ -159,15 +162,6 @@ def process_file(
         original_size = os.path.getsize(file_path)
         base_name = os.path.splitext(os.path.basename(file_path))[0]
 
-        if override_name:
-            output_filename = override_name
-        else:
-            # Auto-naming rules: YYYYMMDD_HHMMSS pour les lots
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{base_name}_{target_w}x{target_h}_{timestamp}.png"
-
-        output_path = os.path.join(output_dir, output_filename)
-
         img = Image.open(file_path)
 
         # Simulation progression
@@ -175,12 +169,27 @@ def process_file(
             render_progress(idx - 1, total, file_path, step=s, total_steps=100)
             time.sleep(0.01)
 
-        if method_choice == "1":
+        if target_w is not None and target_h is None:
+            target_h = max(1, int(round(img.height * (target_w / img.width))))
+            img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        elif target_h is not None and target_w is None:
+            target_w = max(1, int(round(img.width * (target_h / img.height))))
+            img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        elif method_choice == "1":
             img = resize_image_fill(img, target_w, target_h)
         elif method_choice == "2":
             img = resize_image_fit(img, target_w, target_h)
         else:
             img = resize_image_stretch(img, target_w, target_h)
+
+        if override_name:
+            output_filename = override_name
+        else:
+            # Auto-naming rules: YYYYMMDD_HHMMSS pour les lots
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = f"{base_name}_{img.width}x{img.height}_{timestamp}.png"
+
+        output_path = os.path.join(output_dir, output_filename)
 
         for s in range(60, 101, 10):
             render_progress(idx - 1, total, file_path, step=s, total_steps=100)
@@ -222,32 +231,66 @@ def main():
         print("❌ Aucun fichier image valide trouvé.")
         sys.exit(0)
 
-    print(f"✅ {len(files)} images détectées.")
+    print(f"✅ {len(files)} image(s) détectée(s).")
+    if len(files) == 1:
+        try:
+            with Image.open(files[0]) as tmp_img:
+                print(f"📐 Taille actuelle : {tmp_img.width} × {tmp_img.height} px")
+        except Exception:
+            pass
 
     # 2. Dimensions
     try:
         print("\n--- 📏 DIMENSIONS CIBLES ---")
-        w_input = input("Largeur : ").strip()
-        if not w_input:
-            raise ValueError
-        target_w = int(w_input)
+        if files:
+            print("📐 Dimensions d'origine (en pixels) :")
+            if len(files) == 1:
+                try:
+                    with Image.open(files[0]) as tmp_img:
+                        print(f"   • {os.path.basename(files[0])} : {tmp_img.width} × {tmp_img.height} px")
+                except Exception:
+                    pass
+            elif len(files) <= 5:
+                for f_item in files:
+                    try:
+                        with Image.open(f_item) as tmp_img:
+                            print(f"   • {os.path.basename(f_item)} : {tmp_img.width} × {tmp_img.height} px")
+                    except Exception:
+                        pass
+            else:
+                try:
+                    with Image.open(files[0]) as tmp_img:
+                        print(f"   • Exemple (1ère image) : {tmp_img.width} × {tmp_img.height} px ({len(files)} images au total)")
+                except Exception:
+                    pass
+        print("💡 Laissez une dimension vide (Entrée) pour un calcul automatique du ratio.")
+        w_input = input("Largeur (laisser vide si auto) : ").strip()
+        h_input = input("Hauteur (laisser vide si auto) : ").strip()
 
-        h_input = input("Hauteur : ").strip()
-        if not h_input:
-            raise ValueError
-        target_h = int(h_input)
+        target_w = int(w_input) if w_input else None
+        target_h = int(h_input) if h_input else None
+
+        if target_w is None and target_h is None:
+            print("❌ Au moins une dimension (largeur ou hauteur) doit être spécifiée.")
+            sys.exit(1)
+
+        if (target_w is not None and target_w <= 0) or (target_h is not None and target_h <= 0):
+            print("❌ Les dimensions doivent être supérieures à 0.")
+            sys.exit(1)
     except ValueError:
         print("❌ Dimensions invalides. Veuillez entrer des nombres entiers.")
         sys.exit(1)
 
     # 3. Méthode
-    print("\n--- ⚙️ MÉTHODE DE REDIMENSIONNEMENT ---")
-    for k, v in RESIZE_METHODS.items():
-        print(f"{k}. {v}")
-    method_choice = input("Votre choix (par défaut 1) : ").strip() or "1"
-    if method_choice not in RESIZE_METHODS:
-        print("⚠️ Choix invalide, utilisation de 'Remplissage'.")
-        method_choice = "1"
+    method_choice = "1"
+    if target_w is not None and target_h is not None:
+        print("\n--- ⚙️ MÉTHODE DE REDIMENSIONNEMENT ---")
+        for k, v in RESIZE_METHODS.items():
+            print(f"{k}. {v}")
+        method_choice = input("Votre choix (par défaut 1) : ").strip() or "1"
+        if method_choice not in RESIZE_METHODS:
+            print("⚠️ Choix invalide, utilisation de 'Remplissage'.")
+            method_choice = "1"
 
     # 4. Dossier de sortie
     first_arg = paths[0]

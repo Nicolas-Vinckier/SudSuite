@@ -3,6 +3,7 @@ import sys
 import time
 import io
 import shutil
+import warnings
 from datetime import datetime
 
 # --- COMPATIBILITÉ WINDOWS ---
@@ -15,6 +16,9 @@ if sys.platform == "win32":
 
 try:
     from PIL import Image
+    # Désactiver la limite de pixels Pillow pour supporter les très grands fichiers (wireframes/maquettes HD)
+    Image.MAX_IMAGE_PIXELS = None
+    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
@@ -113,8 +117,20 @@ def render_progress(
 
 # --- LOGIQUE DE REDIMENSIONNEMENT ---
 def resize_image(img, target_w, target_h, method):
+    src_w, src_h = img.size
+
+    # Calcul automatique du ratio si une seule dimension est spécifiée
+    if target_w is not None and target_h is None:
+        target_h = max(1, int(round(src_h * (target_w / src_w))))
+        return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    elif target_h is not None and target_w is None:
+        target_w = max(1, int(round(src_w * (target_h / src_h))))
+        return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    elif target_w is None and target_h is None:
+        return img
+
+    # Les deux dimensions sont spécifiées (mode manuel)
     if method == "1":  # Fill / Center Crop
-        src_w, src_h = img.size
         src_ratio = src_w / src_h
         target_ratio = target_w / target_h
         if src_ratio > target_ratio:
@@ -163,7 +179,13 @@ def main():
         print("❌ Aucun fichier image valide trouvé.")
         sys.exit(0)
 
-    print(f"✅ {len(files)} images détectées.")
+    print(f"✅ {len(files)} image(s) détectée(s).")
+    if len(files) == 1:
+        try:
+            with Image.open(files[0]) as tmp_img:
+                print(f"📐 Taille actuelle : {tmp_img.width} × {tmp_img.height} px")
+        except Exception:
+            pass
 
     # 2. Choix des opérations
     print("\n--- 🛠️ CONFIGURATION DU WORKFLOW ---")
@@ -180,15 +202,55 @@ def main():
     resize_config = {}
     if do_resize:
         print("\n--- 📏 CONFIGURATION REDIMENSIONNEMENT ---")
+        if files:
+            print("📐 Dimensions d'origine (en pixels) :")
+            if len(files) == 1:
+                try:
+                    with Image.open(files[0]) as tmp_img:
+                        print(f"   • {os.path.basename(files[0])} : {tmp_img.width} × {tmp_img.height} px")
+                except Exception:
+                    pass
+            elif len(files) <= 5:
+                for f_item in files:
+                    try:
+                        with Image.open(f_item) as tmp_img:
+                            print(f"   • {os.path.basename(f_item)} : {tmp_img.width} × {tmp_img.height} px")
+                    except Exception:
+                        pass
+            else:
+                try:
+                    with Image.open(files[0]) as tmp_img:
+                        print(f"   • Exemple (1ère image) : {tmp_img.width} × {tmp_img.height} px ({len(files)} images au total)")
+                except Exception:
+                    pass
+        print("💡 Laissez une dimension vide (Entrée) pour un calcul automatique du ratio.")
         try:
-            resize_config["w"] = int(input("Largeur cible : ").strip())
-            resize_config["h"] = int(input("Hauteur cible : ").strip())
-            print("Méthodes :")
-            for k, v in RESIZE_METHODS.items():
-                print(f"  {k}. {v}")
-            resize_config["method"] = input("Méthode (par défaut 1) : ").strip() or "1"
+            w_input = input("Largeur cible (laisser vide si auto) : ").strip()
+            h_input = input("Hauteur cible (laisser vide si auto) : ").strip()
+
+            target_w = int(w_input) if w_input else None
+            target_h = int(h_input) if h_input else None
+
+            if target_w is None and target_h is None:
+                print("❌ Au moins une dimension (largeur ou hauteur) doit être spécifiée.")
+                sys.exit(1)
+
+            if (target_w is not None and target_w <= 0) or (target_h is not None and target_h <= 0):
+                print("❌ Les dimensions doivent être supérieures à 0.")
+                sys.exit(1)
+
+            resize_config["w"] = target_w
+            resize_config["h"] = target_h
+
+            if target_w is not None and target_h is not None:
+                print("Méthodes :")
+                for k, v in RESIZE_METHODS.items():
+                    print(f"  {k}. {v}")
+                resize_config["method"] = input("Méthode (par défaut 1) : ").strip() or "1"
+            else:
+                resize_config["method"] = "auto"
         except ValueError:
-            print("❌ Dimensions invalides.")
+            print("❌ Dimensions invalides. Veuillez saisir un nombre entier.")
             sys.exit(1)
 
     # Config Convert
@@ -294,7 +356,7 @@ def main():
                 suffix = ""
                 if is_single_file:
                     if do_resize:
-                        suffix += f"_{resize_config['w']}x{resize_config['h']}"
+                        suffix += f"_{img.width}x{img.height}"
                     if do_compress:
                         suffix += "_min"
                     if not suffix and not do_convert:

@@ -3,6 +3,7 @@ import sys
 import time
 import io
 import shutil
+import warnings
 from datetime import datetime
 
 # --- COMPATIBILITÉ WINDOWS ---
@@ -15,6 +16,8 @@ if sys.platform == "win32":
 
 try:
     from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
