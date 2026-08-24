@@ -38,6 +38,7 @@ Un outil de compression de dossiers intelligent pour archiver vos projets tout e
   3. **Ultra** : Compression maximale (Format `.tar.xz` via LZMA).
 - **Filtres Smart** : Ignore automatiquement les dossiers comme `.git`, `node_modules`, `__pycache__`, etc.
 - **Auto-Naming** : Génère automatiquement un nom avec horodatage (ex: `Projet_Archive_20240414_2125.zip`).
+- **Progression en temps réel** : Affiche le pourcentage, les fichiers et octets traités, la vitesse actuelle, le temps écoulé et une estimation du temps restant, y compris avec les moteurs externes compatibles.
 - **Estimation & Vérification** : Calcule le gain d'espace et vérifie l'intégrité de l'archive après création.
 
 ### 4. 🏷️ Sud Rename (`image_renamer.py`)
