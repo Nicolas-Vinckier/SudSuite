@@ -1,16 +1,20 @@
 import argparse
 import datetime
+import locale
 import lzma
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
 import threading
 import time
+import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,6 +61,10 @@ class Toolchain:
 
 
 class CompressionBackendError(RuntimeError):
+    pass
+
+
+class ExtractionBackendError(RuntimeError):
     pass
 
 
@@ -409,6 +417,81 @@ def resolve_archive_output_path(output_input, default_output_dir, default_filena
     return candidate / default_filename
 
 
+def archive_base_name(archive_path):
+    """Retrouve le nom du dossier source depuis le nom cree a la compression."""
+    name = Path(archive_path).name
+    if name.lower().endswith(".tar.xz"):
+        name = name[:-7]
+    else:
+        name = Path(name).stem
+
+    cleaned = re.sub(
+        r"_Archive(?:_\d{8}_\d{6})?$",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+    return cleaned or "Archive_decompressee"
+
+
+def resolve_extraction_paths(archive_path, destination_input):
+    """Renvoie le parent choisi et le dossier final sans le suffixe _Archive."""
+    if destination_input:
+        destination_root = Path(destination_input).expanduser()
+        if not destination_root.is_absolute():
+            destination_root = Path.cwd() / destination_root
+    else:
+        destination_root = Path(archive_path).resolve().parent
+
+    destination_root = destination_root.resolve()
+    destination_root.mkdir(parents=True, exist_ok=True)
+    final_folder = destination_root / archive_base_name(archive_path)
+    return destination_root, final_folder
+
+
+def detect_archive_format(archive_path):
+    name = str(archive_path).lower()
+    if name.endswith(".zip"):
+        return "zip"
+    if name.endswith(".tar.xz") or name.endswith(".txz"):
+        return "tar.xz"
+    raise ValueError("Format non pris en charge. Utilisez une archive .zip, .tar.xz ou .txz.")
+
+
+def safe_member_path(destination, member_name):
+    """Bloque les chemins absolus et les sorties de dossier (Zip Slip/Tar Slip)."""
+    normalized = member_name.replace("\\", "/")
+    if not normalized or normalized == ".":
+        return Path(destination)
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+        raise ExtractionBackendError(f"Chemin absolu refuse dans l'archive : {member_name}")
+
+    target = (Path(destination) / normalized).resolve()
+    root = Path(destination).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise ExtractionBackendError(f"Chemin dangereux refuse dans l'archive : {member_name}")
+    return target
+
+
+def make_staging_folder(destination_root, final_folder):
+    if final_folder.exists():
+        raise FileExistsError(
+            f"Le dossier de destination existe deja : {final_folder}. "
+            "Renommez-le, deplacez-le ou choisissez une autre destination."
+        )
+
+    # Ne pas utiliser mkdtemp ici : sur un partage SMB/UNC, la suppression
+    # immediate du dossier peut rester visible quelques instants pour 7-Zip.
+    # On reserve donc seulement un nom ASCII aleatoire qui n'a jamais existe.
+    for _ in range(10):
+        candidate = destination_root / f"SudMedia_extraction_{uuid.uuid4().hex}"
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError("Impossible de reserver un dossier temporaire unique.")
+
+
 def scan_folder(folder_path, quiet=False):
     """Un seul scan : taille + nombre + liste reutilisee pour la compression."""
     start = time.perf_counter()
@@ -567,6 +650,23 @@ def safe_unlink(path):
         pass
 
 
+def decode_external_output(data):
+    """Decode correctement les messages natifs, notamment ceux de 7-Zip sous Windows."""
+    if isinstance(data, str):
+        return data
+
+    encodings = ["utf-8"]
+    if os.name == "nt":
+        encodings.extend(["oem", locale.getpreferredencoding(False), "mbcs"])
+
+    for encoding in encodings:
+        try:
+            return data.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
 def build_7zip_listfile(entries):
     fd, temp_path = tempfile.mkstemp(prefix="sudmedia_7z_", suffix=".txt")
     os.close(fd)
@@ -647,7 +747,7 @@ def run_7zip_with_progress(command, cwd, progress):
 
         return_code = process.wait()
         if return_code != 0:
-            error = bytes(output_tail).decode(errors="replace").strip()
+            error = decode_external_output(bytes(output_tail)).strip()
             raise CompressionBackendError(
                 f"Commande externe echouee (code {return_code})"
                 + (f" : {error}" if error else "")
@@ -882,6 +982,308 @@ def compress_tar_xz_python(entries, total_size, output_path, quiet=False):
         raise
 
 
+def inspect_zip_for_extraction(archive_path, destination):
+    files = []
+    total_size = 0
+    with zipfile.ZipFile(archive_path, "r", allowZip64=True) as archive:
+        for info in archive.infolist():
+            safe_member_path(destination, info.filename)
+            unix_type = (info.external_attr >> 16) & 0o170000
+            if unix_type == stat.S_IFLNK:
+                raise ExtractionBackendError(
+                    f"Lien symbolique refuse par securite : {info.filename}"
+                )
+            if not info.is_dir():
+                files.append(info)
+                total_size += info.file_size
+    return files, total_size
+
+
+def extract_zip_python(archive_path, destination, file_infos, total_size, workers, quiet=False):
+    Path(destination).mkdir(parents=True, exist_ok=False)
+    progress = Progress(len(file_infos), total_size, label="Decompression", enabled=not quiet)
+    progress.start()
+
+    def extract_one(archive, info):
+        target = safe_member_path(destination, info.filename)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        copied = 0
+        with archive.open(info, "r") as source, open(target, "wb", buffering=BUFFER_SIZE) as output:
+            while True:
+                chunk = source.read(BUFFER_SIZE)
+                if not chunk:
+                    break
+                output.write(chunk)
+                copied += len(chunk)
+                progress.update_bytes(len(chunk))
+
+        mode = (info.external_attr >> 16) & 0o777
+        if mode:
+            try:
+                target.chmod(mode)
+            except OSError:
+                pass
+        progress.complete_file(max(0, info.file_size - copied))
+
+    try:
+        with zipfile.ZipFile(archive_path, "r", allowZip64=True) as archive:
+            # ZipFile protege ses acces au fichier partage. Les flux de chaque
+            # entree peuvent ainsi etre lus en parallele sans charger les
+            # fichiers en memoire.
+            with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+                futures = [executor.submit(extract_one, archive, info) for info in file_infos]
+                for future in as_completed(futures):
+                    future.result()
+
+            # Reconstitue aussi les dossiers vides presents dans le ZIP.
+            for info in archive.infolist():
+                if info.is_dir():
+                    safe_member_path(destination, info.filename).mkdir(parents=True, exist_ok=True)
+        progress.finish()
+    except BaseException:
+        progress.abort()
+        raise
+
+
+def extract_zip_7zip(
+    archive_path,
+    destination,
+    file_count,
+    total_size,
+    sevenzip,
+    requested_threads,
+    quiet=False,
+):
+    progress = Progress(file_count, total_size, label="Decompression", enabled=not quiet)
+    command = [
+        sevenzip,
+        "x",
+        str(archive_path),
+        f"-o{destination}",
+        "-y",
+        "-bb0",
+        "-bso0",
+        *( ["-bd", "-bsp0"] if quiet else ["-bsp1"] ),
+        thread_switch_7zip(requested_threads),
+    ]
+    if quiet:
+        run_command(command)
+    else:
+        run_7zip_with_progress(command, cwd=None, progress=progress)
+
+
+def extract_tar_xz_7zip(
+    archive_path,
+    destination,
+    sevenzip,
+    requested_threads,
+    quiet=False,
+):
+    """Decompresse XZ puis extrait TAR en flux, sans gros fichier TAR temporaire."""
+    first = [
+        sevenzip,
+        "x",
+        str(archive_path),
+        "-so",
+        "-y",
+        "-bd",
+        "-bb0",
+        thread_switch_7zip(requested_threads),
+    ]
+    second = [
+        sevenzip,
+        "x",
+        "-si",
+        "-ttar",
+        f"-o{destination}",
+        "-y",
+        "-bd",
+        "-bb0",
+        "-bso0",
+        "-bsp0",
+        thread_switch_7zip(requested_threads),
+    ]
+
+    if not quiet:
+        print("[Decompression] Extraction TAR.XZ en flux avec 7-Zip...")
+
+    producer = subprocess.Popen(first, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    consumer = subprocess.Popen(
+        second,
+        stdin=producer.stdout,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    producer.stdout.close()
+    consumer_error = consumer.communicate()[1]
+    producer_error = producer.stderr.read()
+    producer_code = producer.wait()
+
+    if producer_code != 0 or consumer.returncode != 0:
+        details = decode_external_output(producer_error + b"\n" + consumer_error).strip()
+        raise ExtractionBackendError(
+            "Extraction TAR.XZ avec 7-Zip echouee"
+            + (f" : {details[-2000:]}" if details else "")
+        )
+
+
+def extract_tar_members(archive, destination):
+    file_count = 0
+    total_size = 0
+    for member in archive:
+        target = safe_member_path(destination, member.name)
+        if member.issym() or member.islnk():
+            raise ExtractionBackendError(
+                f"Lien refuse par securite dans l'archive : {member.name}"
+            )
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if not member.isfile():
+            raise ExtractionBackendError(
+                f"Type d'entree non pris en charge : {member.name}"
+            )
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = archive.extractfile(member)
+        if source is None:
+            raise ExtractionBackendError(f"Impossible de lire : {member.name}")
+        with source, open(target, "wb", buffering=BUFFER_SIZE) as output:
+            shutil.copyfileobj(source, output, length=BUFFER_SIZE)
+        try:
+            target.chmod(member.mode & 0o777)
+            os.utime(target, (member.mtime, member.mtime))
+        except OSError:
+            pass
+        file_count += 1
+        total_size += member.size
+    return file_count, total_size
+
+
+def extract_tar_xz_external_xz(
+    archive_path,
+    destination,
+    xz_path,
+    requested_threads,
+    quiet=False,
+):
+    """Decompression XZ native multithread, puis extraction TAR securisee en flux."""
+    Path(destination).mkdir(parents=True, exist_ok=False)
+    if not quiet:
+        print("[Decompression] XZ multithread + extraction TAR en flux...")
+    env = os.environ.copy()
+    env.pop("XZ_DEFAULTS", None)
+    command = [
+        xz_path,
+        "-dc",
+        thread_switch_xz(requested_threads),
+        str(archive_path),
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    try:
+        with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+            file_count, total_size = extract_tar_members(archive, destination)
+        process.stdout.close()
+        error = process.stderr.read()
+        return_code = process.wait()
+        if return_code != 0:
+            details = decode_external_output(error).strip()
+            raise ExtractionBackendError(
+                f"Decompression XZ echouee (code {return_code})"
+                + (f" : {details[-2000:]}" if details else "")
+            )
+        return file_count, total_size
+    except BaseException:
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        raise
+
+
+def extract_tar_xz_python(archive_path, destination, quiet=False):
+    """Fallback sur la bibliotheque standard, avec controle de chaque chemin."""
+    Path(destination).mkdir(parents=True, exist_ok=False)
+    if not quiet:
+        print("[Moteur] TAR.XZ Python standard (fallback monothread)")
+
+    with tarfile.open(archive_path, "r:xz") as archive:
+        return extract_tar_members(archive, destination)
+
+
+def execute_extraction(
+    archive_format,
+    archive_path,
+    destination,
+    tools,
+    engine,
+    requested_threads,
+    effective_threads,
+    quiet=False,
+):
+    if archive_format == "zip":
+        file_infos, total_size = inspect_zip_for_extraction(archive_path, destination)
+        if engine != "python" and tools.sevenzip:
+            print(f"[Moteur] {describe_backend('7zip')}")
+            extract_zip_7zip(
+                archive_path,
+                destination,
+                len(file_infos),
+                total_size,
+                tools.sevenzip,
+                requested_threads,
+                quiet=quiet,
+            )
+            return "7zip", len(file_infos), total_size
+        if engine == "external":
+            raise RuntimeError("7-Zip est requis pour une decompression ZIP externe.")
+
+        print(f"[Moteur] Python multithread ({effective_threads} workers)")
+        extract_zip_python(
+            archive_path,
+            destination,
+            file_infos,
+            total_size,
+            effective_threads,
+            quiet=quiet,
+        )
+        return "python-multithread", len(file_infos), total_size
+
+    if engine != "python" and tools.xz:
+        print(f"[Moteur] {describe_backend('xz')}")
+        file_count, total_size = extract_tar_xz_external_xz(
+            archive_path,
+            destination,
+            tools.xz,
+            requested_threads,
+            quiet=quiet,
+        )
+        return "xz", file_count, total_size
+    if engine != "python" and tools.sevenzip:
+        print(f"[Moteur] {describe_backend('7zip')}")
+        extract_tar_xz_7zip(
+            archive_path,
+            destination,
+            tools.sevenzip,
+            requested_threads,
+            quiet=quiet,
+        )
+        return "7zip", None, None
+    if engine == "external":
+        raise RuntimeError("XZ ou 7-Zip est requis pour la decompression TAR.XZ externe.")
+
+    file_count, total_size = extract_tar_xz_python(
+        archive_path,
+        destination,
+        quiet=quiet,
+    )
+    return "python", file_count, total_size
+
+
 def quick_verify_zip(output_path, expected_count):
     with zipfile.ZipFile(output_path, "r", allowZip64=True) as archive:
         count = sum(1 for item in archive.infolist() if not item.is_dir())
@@ -977,6 +1379,7 @@ def describe_backend(backend):
         "7zip": "7-Zip natif multithread",
         "xz": "XZ natif multithread + TAR streame",
         "7zip-xz": "7-Zip/XZ multithread + TAR streame",
+        "python-multithread": "Python multithread",
         "python": "Python standard (fallback)",
     }.get(backend, backend)
 
@@ -1060,6 +1463,112 @@ def print_diagnostics(tools, requested_threads, effective_threads):
     print(f"7-Zip             : {tools.sevenzip or 'non detecte'}")
     print(f"XZ                : {tools.xz or 'non detecte'}")
     print("=" * 60)
+
+
+def decompress_archive(cli_args=None):
+    configure_console_output()
+    quiet = bool(getattr(cli_args, "quiet", False))
+
+    if cli_args and cli_args.input:
+        archive_input = clean_input_path(cli_args.input)
+    else:
+        archive_input = clean_input_path(
+            input("📦 Archive a decompresser (.zip ou .tar.xz) : ")
+        )
+
+    archive_path = Path(archive_input).expanduser()
+    if not archive_path.is_absolute():
+        archive_path = Path.cwd() / archive_path
+    archive_path = archive_path.resolve()
+
+    if not archive_path.is_file():
+        print(f"[Erreur] '{archive_path}' n'est pas une archive valide.")
+        return 2
+
+    try:
+        archive_format = detect_archive_format(archive_path)
+        requested_threads, effective_threads = parse_threads(
+            getattr(cli_args, "threads", "auto")
+        )
+    except ValueError as exc:
+        print(f"[Erreur] {exc}")
+        return 2
+
+    tools = detect_toolchain(cli_args)
+    if getattr(cli_args, "diagnostic", False):
+        print_diagnostics(tools, requested_threads, effective_threads)
+
+    if cli_args and cli_args.output is not None:
+        destination_input = clean_input_path(cli_args.output)
+    else:
+        print("\n" + "=" * 60)
+        print("DESTINATION DE LA DECOMPRESSION")
+        print("=" * 60)
+        destination_input = clean_input_path(
+            input(
+                "Dossier parent de destination "
+                "(Entree = a cote de l'archive) : "
+            )
+        )
+
+    try:
+        destination_root, final_folder = resolve_extraction_paths(
+            archive_path,
+            destination_input,
+        )
+        staging_folder = make_staging_folder(destination_root, final_folder)
+    except Exception as exc:
+        print(f"[Erreur] Impossible de preparer la destination : {exc}")
+        return 2
+
+    engine = getattr(cli_args, "engine", "auto")
+    print("\n" + "=" * 60)
+    print("DECOMPRESSION")
+    print("=" * 60)
+    print(f"[Source] {archive_path}")
+    print(f"[Destination] {final_folder}")
+    print(f"[Format] {archive_format.upper()}")
+    print(
+        f"[Threads] {'auto' if requested_threads == 0 else requested_threads} "
+        f"(CPU logique : {effective_threads})"
+    )
+
+    started_at = time.perf_counter()
+    try:
+        used_backend, file_count, total_size = execute_extraction(
+            archive_format,
+            archive_path,
+            staging_folder,
+            tools,
+            engine,
+            requested_threads,
+            effective_threads,
+            quiet=quiet,
+        )
+        staging_folder.replace(final_folder)
+        elapsed = time.perf_counter() - started_at
+
+        print("\n" + "=" * 60)
+        print("DECOMPRESSION TERMINEE")
+        print("=" * 60)
+        print(f"Moteur             : {describe_backend(used_backend)}")
+        print(f"Temps total         : {elapsed:.2f} s")
+        if total_size is not None:
+            print(f"Taille extraite     : {format_size(total_size)}")
+        if file_count is not None:
+            print(f"Fichiers            : {file_count}")
+        print(f"Emplacement         : {final_folder}")
+        print("=" * 60)
+        return 0
+
+    except KeyboardInterrupt:
+        shutil.rmtree(staging_folder, ignore_errors=True)
+        print("\n[Interruption] Operation annulee. Extraction partielle supprimee.")
+        return 130
+    except Exception as exc:
+        shutil.rmtree(staging_folder, ignore_errors=True)
+        print(f"\n[Erreur Fatale] {exc}")
+        return 1
 
 
 def compress_folder(cli_args=None):
@@ -1261,9 +1770,30 @@ def compress_folder(cli_args=None):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="SudMedia Folder Compressor - version optimisee multithread"
+        description="SudMedia Folder Compressor - compression/decompression multithread"
     )
-    parser.add_argument("-input", "--input", "-i", help="Dossier a compresser")
+    action_group = parser.add_mutually_exclusive_group()
+    action_group.add_argument(
+        "-a",
+        "--action",
+        choices=["compress", "decompress"],
+        help="Operation a effectuer",
+    )
+    action_group.add_argument(
+        "-d",
+        "--decompress",
+        dest="action",
+        action="store_const",
+        const="decompress",
+        help="Raccourci pour --action decompress",
+    )
+    parser.add_argument(
+        "-input",
+        "--input",
+        "--source",
+        "-i",
+        help="Dossier source a compresser ou archive source a decompresser",
+    )
     parser.add_argument(
         "-mode",
         "--mode",
@@ -1271,7 +1801,13 @@ def build_parser():
         choices=["1", "2", "3"],
         help="Mode : 1=ZIP rapide, 2=ZIP BZip2, 3=TAR.XZ",
     )
-    parser.add_argument("-output", "--output", "-o", help="Chemin de sortie de l'archive")
+    parser.add_argument(
+        "-output",
+        "--output",
+        "--destination",
+        "-o",
+        help="Sortie de l'archive ou dossier parent de decompression",
+    )
     parser.add_argument(
         "--threads",
         default="auto",
@@ -1307,4 +1843,22 @@ def build_parser():
 if __name__ == "__main__":
     parser = build_parser()
     args = parser.parse_args()
+    action = args.action
+    if action is None and args.input:
+        # Compatibilite avec les anciennes commandes : -i seul compresse.
+        action = "compress"
+    elif action is None:
+        print("\n1. Compresser un dossier")
+        print("2. Decompresser une archive")
+        choice = input("\nVotre choix (1 ou 2) : ").strip()
+        if choice == "1":
+            action = "compress"
+        elif choice == "2":
+            action = "decompress"
+        else:
+            print("[Erreur] Choix invalide.")
+            sys.exit(2)
+
+    if action == "decompress":
+        sys.exit(decompress_archive(args))
     sys.exit(compress_folder(args))
