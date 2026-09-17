@@ -1,23 +1,35 @@
 import os
 import sys
 import time
-import io
-import shutil
-import warnings
-from datetime import datetime
 
-# --- COMPATIBILITÉ WINDOWS ---
-if sys.platform == "win32":
-    os.system("")  # Active le support des codes ANSI/VT100
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except AttributeError:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+try:
+    from .sudmedia_utils import (
+        IMAGE_OUTPUT_FORMATS,
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        prepare_image_for_format,
+        render_progress,
+        reserve_output_path,
+    )
+except ImportError:
+    from sudmedia_utils import (
+        IMAGE_OUTPUT_FORMATS,
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        prepare_image_for_format,
+        render_progress,
+        reserve_output_path,
+    )
+
+configure_console_output()
 
 try:
     from PIL import Image
-    Image.MAX_IMAGE_PIXELS = None
-    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+    configure_pillow(Image)
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
@@ -26,24 +38,7 @@ except ImportError:
 
 # --- CONFIGURATION & CONSTANTES ---
 VALID_EXTENSIONS = (".png", ".jpeg", ".jpg", ".webp", ".bmp", ".tiff", ".gif")
-SUPPORTED_OUTPUT_FORMATS = {
-    "1": ("PNG", ".png"),
-    "2": ("JPEG", ".jpg"),
-    "3": ("WEBP", ".webp"),
-    "4": ("BMP", ".bmp"),
-    "5": ("TIFF", ".tiff"),
-    "6": ("GIF", ".gif"),
-}
-
-
-# --- UTILITAIRES ---
-def format_size(size_in_bytes):
-    """Formate une taille en octets vers une unité lisible."""
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
+SUPPORTED_OUTPUT_FORMATS = IMAGE_OUTPUT_FORMATS.copy()
 
 
 def print_banner():
@@ -60,89 +55,34 @@ def print_banner():
 
 def get_target_files(paths):
     """Collecte tous les fichiers images valides à partir des chemins fournis."""
-    target_files = []
-    for path in paths:
-        if os.path.isdir(path):
-            for root, dirs, files in os.walk(path):
-                # Smart Filtering: ignorer les dossiers cachés ou système
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if not d.startswith((".", "__"))
-                    and d not in ("node_modules", "dist", "build")
-                ]
-                for f in files:
-                    if f.lower().endswith(VALID_EXTENSIONS):
-                        target_files.append(os.path.join(root, f))
-        elif os.path.isfile(path):
-            if path.lower().endswith(VALID_EXTENSIONS):
-                target_files.append(path)
-            else:
-                print(
-                    f"⚠️  Le fichier {os.path.basename(path)} n'est pas une image supportée."
-                )
-        else:
-            print(f"❌ {path} n'est ni un fichier ni un dossier valide.")
-    return target_files
-
-
-def render_progress(global_idx, global_total, filename, step=0, total_steps=100):
-    """
-    Affiche une barre de progression robuste sur une seule ligne.
-    """
-    try:
-        columns = shutil.get_terminal_size((80, 20)).columns
-    except:
-        columns = 80
-
-    # Marge de sécurité pour éviter le wrapping (critique pour \r)
-    # Les emojis comptent pour 1 en python mais 2 colonnes en visuel
-    safety_margin = 15
-    available_width = columns - safety_margin
-
-    # Proportion des barres (plus petites pour la stabilité)
-    g_bar_len = 10
-    l_bar_len = 10
-
-    # Barre Globale
-    g_filled = int(g_bar_len * global_idx // global_total)
-    g_bar = "█" * g_filled + "░" * (g_bar_len - g_filled)
-    g_pct = (global_idx / global_total) * 100
-
-    # Barre Locale
-    l_filled = int(l_bar_len * step // total_steps)
-    l_bar = "━" * l_filled + " " * (l_bar_len - l_filled)
-
-    # Nom de fichier tronqué
-    fn = os.path.basename(filename)
-    # Calcul de l'espace pour le texte (on enlève les barres et préfixes)
-    # "G:[###] 100% | L:[###] | " ~ 30 chars
-    txt_space = available_width - 35
-    if len(fn) > txt_space:
-        fn = fn[: max(5, txt_space - 3)] + "..."
-
-    # Ligne finale
-    # On n'utilise pas d'emojis complexes ici pour garantir la largeur
-    line = f" G:[{g_bar}] {g_pct:>3.0f}% ({global_idx}/{global_total}) | D:[{l_bar}] | {fn}"
-
-    # Écriture propre
-    sys.stdout.write("\r" + line.ljust(columns - 1))
-    sys.stdout.flush()
+    return collect_target_files(
+        paths,
+        VALID_EXTENSIONS,
+        item_label="une image supportée",
+    )
 
 
 def convert_image(
-    input_path, target_format, target_ext, output_dir, silent=False, global_info=(0, 0)
+    input_path,
+    target_format,
+    target_ext,
+    output_dir,
+    silent=False,
+    global_info=(0, 0),
+    reserved_paths=None,
 ):
     """Convertit une image unique ou l'ignore si elle existe déjà."""
     idx, total = global_info
     try:
-        start_time = time.time()
         original_size = os.path.getsize(input_path)
 
         # Nom de fichier prévisible sans horodatage pour permettre l'idempotence
         base_name = os.path.splitext(os.path.basename(input_path))[0]
         output_filename = f"{base_name}{target_ext}"
-        output_path = os.path.join(output_dir, output_filename)
+        output_path = reserve_output_path(
+            os.path.join(output_dir, output_filename),
+            reserved_paths,
+        )
 
         # Vérification si déjà fait
         if os.path.exists(output_path):
@@ -156,11 +96,7 @@ def convert_image(
 
         img = Image.open(input_path)
 
-        # Gestion de la transparence
-        if target_format == "JPEG" and img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
-        elif img.mode == "P" and target_format != "GIF":
-            img = img.convert("RGBA" if "transparency" in img.info else "RGB")
+        img = prepare_image_for_format(img, target_format)
 
         # Sauvegarde
         save_params = {}
@@ -247,6 +183,7 @@ def main():
     total_original_size = 0
     total_new_size = 0
     total_files = len(files)
+    reserved_paths = set()
 
     try:
         for i, f in enumerate(files, 1):
@@ -257,6 +194,7 @@ def main():
                 output_dir,
                 silent=True,
                 global_info=(i, total_files),
+                reserved_paths=reserved_paths,
             )
             if res == "skipped":
                 skipped_count += 1

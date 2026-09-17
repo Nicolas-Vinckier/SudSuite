@@ -1,0 +1,1 @@
+"""Outils multimédias de SudSuite."""

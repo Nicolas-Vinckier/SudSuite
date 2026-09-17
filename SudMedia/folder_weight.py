@@ -6,6 +6,13 @@ import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
 
+try:
+    from .sudmedia_utils import clean_input_path, configure_console_output, format_size
+except ImportError:
+    from sudmedia_utils import clean_input_path, configure_console_output, format_size
+
+configure_console_output()
+
 
 # --- CONFIGURATION ---
 EXCLUDE_PATTERNS = sorted({
@@ -29,18 +36,6 @@ class FolderNode:
     file_count: int = 0
     dir_count: int = 0
     children: list = field(default_factory=list)
-
-
-def clean_input_path(value):
-    return value.strip().replace('"', "").replace("'", "")
-
-
-def format_size(size_in_bytes):
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
 
 
 def non_negative_int(value):

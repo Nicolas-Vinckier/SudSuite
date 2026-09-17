@@ -87,7 +87,23 @@ L'outil ultime de la suite qui permet de combiner le redimensionnement, la conve
 - **Optimisation séquentielle** : Applique toutes les transformations en une seule fois pour une rapidité maximale et une usure minimale du disque.
 - **Bilan Complet** : Affiche un résumé détaillé du gain d'espace total après le traitement combiné.
 
-### 8. 🔒 Sud Vault Sync (`sud_vault_sync.py`)
+### 8. 📄 Sud PDF to Image (`pdf_to_image.py`)
+
+Convertit un ou plusieurs PDF en images PNG ou JPEG, avec choix du DPI et recadrage automatique optionnel des marges blanches.
+
+- **Traitement par lot** : Accepte un PDF, plusieurs chemins ou un dossier complet.
+- **Qualité réglable** : Permet de choisir précisément la résolution de rendu en DPI.
+- **Sorties sûres** : Isole les résultats dans un dossier dédié et protège les noms identiques au sein d'un même lot.
+
+### 9. ⚖️ Sud Weight (`folder_weight.py`)
+
+Analyse le poids d'un dossier, affiche son arborescence triée par taille et peut lister les fichiers les plus lourds.
+
+- **Analyse efficace** : Un seul parcours du dossier avec suivi des erreurs d'accès.
+- **Affichage configurable** : Profondeur, top des fichiers et exclusions techniques réglables.
+- **Mode automatisable** : Interface interactive ou arguments en ligne de commande.
+
+### 10. 🔒 Sud Vault Sync (`sud_vault_sync.py`)
 
 Un outil de sécurité robuste permettant de chiffrer un dossier local vers un dossier distant (type Google Drive, OneDrive) et de synchroniser les modifications de manière bidirectionnelle.
 
@@ -97,7 +113,7 @@ Un outil de sécurité robuste permettant de chiffrer un dossier local vers un d
 - **Synchronisation Continue Bidirectionnelle** : Applique intelligemment les ajouts, modifications et suppressions entre le local et le dossier chiffré cloud en permanence.
 - **Sécurité** : Les fichiers originaux ne sont écrasés qu'en cas de mise à jour légitime et les modes unidirectionnels ne font que des copies.
 
-### 9. 📥 SudGit Sync (`SudGit/sud_git_sync.py`)
+### 11. 📥 SudGit Sync (`SudGit/sud_git_sync.py`)
 
 Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plusieurs dépôts Git locaux simultanément et en parallèle.
 
@@ -116,9 +132,13 @@ Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plus
 ## 🛠️ Installation
 
 1.  Assurez-vous d'avoir [Python](https://www.python.org/) installé.
-2.  Installez la bibliothèque obligatoire **Pillow** :
+2.  Installez **Pillow** pour les outils d'image :
     ```bash
     pip install Pillow
+    ```
+3.  Pour `pdf_to_image.py`, installez également **PyMuPDF** :
+    ```bash
+    pip install PyMuPDF
     ```
 
 ---

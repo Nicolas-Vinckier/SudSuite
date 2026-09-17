@@ -1,18 +1,28 @@
 import os
 import sys
-import time
-import io
-import shutil
 
-import warnings
+try:
+    from .sudmedia_utils import (
+        IMAGE_OUTPUT_FORMATS,
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        render_progress,
+        reserve_output_path,
+    )
+except ImportError:
+    from sudmedia_utils import (
+        IMAGE_OUTPUT_FORMATS,
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        render_progress,
+        reserve_output_path,
+    )
 
-# --- COMPATIBILITÉ WINDOWS ---
-if sys.platform == "win32":
-    os.system("")
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except AttributeError:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+configure_console_output()
 
 try:
     import fitz
@@ -24,9 +34,7 @@ except ImportError:
 
 try:
     from PIL import Image, ImageChops
-    # Désactiver la limite de pixels de Pillow pour éviter DecompressionBombWarning sur les grands PDF (ex: maquettes / wireframes HD)
-    Image.MAX_IMAGE_PIXELS = None
-    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+    configure_pillow(Image)
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
@@ -36,18 +44,9 @@ except ImportError:
 # --- CONFIGURATION & CONSTANTES ---
 VALID_EXTENSIONS = (".pdf",)
 SUPPORTED_OUTPUT_FORMATS = {
-    "1": ("PNG", ".png"),
-    "2": ("JPEG", ".jpg"),
+    key: IMAGE_OUTPUT_FORMATS[key]
+    for key in ("1", "2")
 }
-
-
-# --- UTILITAIRES ---
-def format_size(size_in_bytes):
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
 
 
 def print_banner():
@@ -63,64 +62,11 @@ def print_banner():
 
 
 def get_target_files(paths):
-    target_files = []
-    for raw_path in paths:
-        path = raw_path.strip('"\' ')
-        if not path:
-            continue
-        if os.path.isdir(path):
-            for root, dirs, files in os.walk(path):
-                # Smart Filtering: ignorer les dossiers cachés ou système
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if not d.startswith((".", "__"))
-                    and d not in ("node_modules", "dist", "build")
-                ]
-                for f in files:
-                    if f.lower().endswith(VALID_EXTENSIONS):
-                        target_files.append(os.path.join(root, f))
-        elif os.path.isfile(path):
-            if path.lower().endswith(VALID_EXTENSIONS):
-                target_files.append(path)
-            else:
-                print(f"⚠️  Le fichier {os.path.basename(path)} n'est pas un PDF.")
-        else:
-            print(f"❌ '{path}' n'est ni un fichier ni un dossier valide.")
-    return target_files
-
-
-def render_progress(global_idx, global_total, filename, step=0, total_steps=100):
-    """
-    Affiche une barre de progression robuste sur une seule ligne.
-    """
-    try:
-        columns = shutil.get_terminal_size((80, 20)).columns
-    except:
-        columns = 80
-
-    safety_margin = 15
-    available_width = columns - safety_margin
-    g_bar_len = 10
-    l_bar_len = 10
-
-    g_filled = (
-        int(g_bar_len * global_idx // global_total) if global_total > 0 else g_bar_len
+    return collect_target_files(
+        paths,
+        VALID_EXTENSIONS,
+        item_label="un PDF",
     )
-    g_bar = "█" * g_filled + "░" * (g_bar_len - g_filled)
-    g_pct = (global_idx / global_total) * 100 if global_total > 0 else 100
-
-    l_filled = int(l_bar_len * step // total_steps) if total_steps > 0 else l_bar_len
-    l_bar = "━" * l_filled + " " * (l_bar_len - l_filled)
-
-    fn = os.path.basename(filename)
-    txt_space = available_width - 35
-    if len(fn) > txt_space:
-        fn = fn[: max(5, txt_space - 3)] + "..."
-
-    line = f" G:[{g_bar}] {g_pct:>3.0f}% ({global_idx}/{global_total}) | D:[{l_bar}] | {fn}"
-    sys.stdout.write("\r" + line.ljust(columns - 1))
-    sys.stdout.flush()
 
 
 def crop_white_borders(img, padding=10):
@@ -154,6 +100,7 @@ def convert_pdf(
     auto_crop=False,
     silent=False,
     global_info=(0, 0),
+    reserved_paths=None,
 ):
     """Convertit un PDF en une ou plusieurs images."""
     idx, total = global_info
@@ -192,7 +139,10 @@ def convert_pdf(
                 if num_pages > 1
                 else f"{base_name}{target_ext}"
             )
-            output_path = os.path.join(output_dir, page_filename)
+            output_path = reserve_output_path(
+                os.path.join(output_dir, page_filename),
+                reserved_paths,
+            )
 
             save_params = {}
             if target_format == "JPEG":
@@ -314,6 +264,7 @@ def main():
     total_original_size = 0
     total_new_size = 0
     total_files = len(files)
+    reserved_paths = set()
 
     try:
         for i, f in enumerate(files, 1):
@@ -326,6 +277,7 @@ def main():
                 auto_crop=auto_crop,
                 silent=True,
                 global_info=(i, total_files),
+                reserved_paths=reserved_paths,
             )
             if res[0] is True:
                 success_count += 1

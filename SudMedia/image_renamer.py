@@ -1,8 +1,26 @@
 import os
 import datetime
-import time
 import sys
 import shutil
+
+try:
+    from .sudmedia_utils import (
+        IMAGE_EXTENSIONS,
+        MEDIA_EXTENSIONS,
+        VIDEO_EXTENSIONS,
+        clean_input_path,
+        configure_console_output,
+    )
+except ImportError:
+    from sudmedia_utils import (
+        IMAGE_EXTENSIONS,
+        MEDIA_EXTENSIONS,
+        VIDEO_EXTENSIONS,
+        clean_input_path,
+        configure_console_output,
+    )
+
+configure_console_output()
 
 # --- ASCII Header ---
 HEADER = r"""
@@ -14,14 +32,10 @@ HEADER = r"""
 
 """
 
-# --- Configuration ---
-EXTENSIONS_IMAGE = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".heic")
-EXTENSIONS_VIDEO = (".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv")
-EXTENSIONS_MEDIA = EXTENSIONS_IMAGE + EXTENSIONS_VIDEO
-
-
-def clear_console():
-    os.system("cls" if os.name == "nt" else "clear")
+# Alias conservés pour les éventuels imports externes de l'ancien script.
+EXTENSIONS_IMAGE = IMAGE_EXTENSIONS
+EXTENSIONS_VIDEO = VIDEO_EXTENSIONS
+EXTENSIONS_MEDIA = MEDIA_EXTENSIONS
 
 
 def format_timestamp(ts, pattern):
@@ -42,7 +56,7 @@ def format_timestamp(ts, pattern):
     return result
 
 
-def get_unique_filename(directory, base_name, extension, pattern):
+def get_unique_filename(directory, base_name, extension):
     """
     Gère les collisions en utilisant le token '#' du motif ou en ajoutant un index.
     """
@@ -77,9 +91,9 @@ def run_rename():
     # 1. Sélection du dossier
     while True:
         folder_path = (
-            input("\n📂 Chemin du dossier à traiter (ou glissez-déposez) : ")
-            .strip()
-            .strip('"')
+            clean_input_path(
+                input("\n📂 Chemin du dossier à traiter (ou glissez-déposez) : ")
+            )
         )
         if os.path.isdir(folder_path):
             break
@@ -157,17 +171,14 @@ def run_rename():
         base_new_name = format_timestamp(mtime, rename_format)
 
         # Trouver un nom unique dans le dossier de destination
-        final_name = get_unique_filename(
-            dest_folder, base_new_name, extension, rename_format
-        )
+        final_name = get_unique_filename(dest_folder, base_new_name, extension)
         new_path = os.path.join(dest_folder, f"{final_name}{extension}")
 
         try:
             # On utilise copy2 pour préserver la date de modification originale
             shutil.copy2(old_path, new_path)
             renamed_count += 1
-        except Exception as e:
-            # print(f"❌ Erreur sur {filename} : {e}") # On masque pour ne pas casser la barre
+        except OSError:
             error_count += 1
 
         # Barre de chargement

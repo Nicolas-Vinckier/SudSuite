@@ -4,8 +4,30 @@ import datetime
 import re
 import json
 import random
+from pathlib import Path
 
-CONFIG_FILE = "image_sorting_config.json"
+try:
+    from .sudmedia_utils import (
+        MEDIA_EXTENSIONS,
+        clean_input_path,
+        configure_console_output,
+        paths_overlap,
+        unique_available_path,
+        walk_filtered,
+    )
+except ImportError:
+    from sudmedia_utils import (
+        MEDIA_EXTENSIONS,
+        clean_input_path,
+        configure_console_output,
+        paths_overlap,
+        unique_available_path,
+        walk_filtered,
+    )
+
+configure_console_output()
+
+CONFIG_FILE = Path(__file__).with_name("image_sorting_config.json")
 
 mois_fr = {
     1: "Janvier",
@@ -71,21 +93,9 @@ def detecter_format_nom(source):
     if not os.path.exists(source):
         return None
 
-    for root, dirs, files in os.walk(source):
+    for root, dirs, files in walk_filtered(source):
         for f in files:
-            if f.lower().endswith(
-                (
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                    ".gif",
-                    ".bmp",
-                    ".mp4",
-                    ".avi",
-                    ".mov",
-                    ".mkv",
-                )
-            ):
+            if f.lower().endswith(MEDIA_EXTENSIONS):
                 all_files.append(f)
 
     if not all_files:
@@ -128,21 +138,9 @@ def a_des_fichiers_media(source):
     """Vérifie si le dossier contient au moins un fichier média."""
     if not os.path.exists(source):
         return False
-    for root, dirs, files in os.walk(source):
+    for root, dirs, files in walk_filtered(source):
         for f in files:
-            if f.lower().endswith(
-                (
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                    ".gif",
-                    ".bmp",
-                    ".mp4",
-                    ".avi",
-                    ".mov",
-                    ".mkv",
-                )
-            ):
+            if f.lower().endswith(MEDIA_EXTENSIONS):
                 return True
     return False
 
@@ -180,13 +178,15 @@ def demander_format_nom(source):
 
 def configurer():
     print("\n--- Configuration du tri des médias ---")
-    source = input("Dossier source (laisser vide pour 'Source_photo') : ").strip()
+    source = clean_input_path(
+        input("Dossier source (laisser vide pour 'Source_photo') : ")
+    )
     if not source:
         source = "Source_photo"
 
-    destination = input(
-        "Dossier de destination (laisser vide pour 'Destination_photo') : "
-    ).strip()
+    destination = clean_input_path(
+        input("Dossier de destination (laisser vide pour 'Destination_photo') : ")
+    )
     if not destination:
         destination = "Destination_photo"
 
@@ -280,7 +280,23 @@ def get_date_from_file(filepath, filename, mode, format_nom=None):
     return None, None
 
 
+def valider_dossiers(config):
+    """Empêche un tri récursif dangereux entre deux dossiers imbriqués."""
+    source = config["source"]
+    destination = config["destination"]
+    if paths_overlap(source, destination):
+        print(
+            "[Erreur] Les dossiers source et destination doivent être distincts "
+            "et ne pas être imbriqués l'un dans l'autre."
+        )
+        return False
+    return True
+
+
 def copier_coller_media(config):
+    if not valider_dossiers(config):
+        return
+
     source = config["source"]
     destination = config["destination"]
     mode_tri = config["mode_tri"]
@@ -300,24 +316,12 @@ def copier_coller_media(config):
 
     fichiers_traites = 0
 
-    for root, dirs, files in os.walk(source):
+    for root, dirs, files in walk_filtered(source):
         for filename in files:
             filepath = os.path.join(root, filename)
 
             # Vérifier l'extension pour ignorer les fichiers qui ne sont pas des médias
-            if not filename.lower().endswith(
-                (
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                    ".gif",
-                    ".bmp",
-                    ".mp4",
-                    ".avi",
-                    ".mov",
-                    ".mkv",
-                )
-            ):
+            if not filename.lower().endswith(MEDIA_EXTENSIONS):
                 continue
 
             annee, mois = get_date_from_file(
@@ -343,9 +347,12 @@ def copier_coller_media(config):
                 if not os.path.exists(destination_doublon_mois):
                     os.makedirs(destination_doublon_mois)
 
-                shutil.move(filepath, os.path.join(destination_doublon_mois, filename))
+                duplicate_path = unique_available_path(
+                    os.path.join(destination_doublon_mois, filename)
+                )
+                shutil.move(filepath, duplicate_path)
                 print(
-                    f"Doublon - Fichier deplace : {os.path.join(destination_doublon_mois, filename)}"
+                    f"Doublon - Fichier deplace : {duplicate_path}"
                 )
             else:
                 shutil.move(filepath, destination_filepath)
@@ -370,6 +377,9 @@ def copier_coller_media(config):
 
 def tri_inverse(config):
     """Déplace tous les fichiers média de la destination vers la source."""
+    if not valider_dossiers(config):
+        return
+
     source = config["source"]
     destination = config["destination"]
 
@@ -381,25 +391,13 @@ def tri_inverse(config):
         os.makedirs(source)
 
     fichiers_deplaces = 0
-    extensions_media = (
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".bmp",
-        ".mp4",
-        ".avi",
-        ".mov",
-        ".mkv",
-    )
-
     print(f"\n--- Lancement du tri inverse (Dest -> Source) ---")
 
-    for root, dirs, files in os.walk(destination):
+    for root, dirs, files in walk_filtered(destination):
         # Ignorer le dossier 'doublon' s'il existe et qu'on ne veut pas y toucher
         # (Ou on peut choisir de le vider aussi, ici on vide tout)
         for filename in files:
-            if filename.lower().endswith(extensions_media):
+            if filename.lower().endswith(MEDIA_EXTENSIONS):
                 filepath = os.path.join(root, filename)
                 dest_path = os.path.join(source, filename)
 
@@ -411,6 +409,7 @@ def tri_inverse(config):
                         source,
                         f"{name}_restaure_{datetime.datetime.now().strftime('%H%M%S')}{ext}",
                     )
+                    dest_path = unique_available_path(dest_path)
 
                 try:
                     shutil.move(filepath, dest_path)

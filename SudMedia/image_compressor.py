@@ -1,27 +1,34 @@
 import os
 import io
 import sys
-import warnings
+
+try:
+    from .sudmedia_utils import (
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        prepare_image_for_format,
+    )
+except ImportError:
+    from sudmedia_utils import (
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        prepare_image_for_format,
+    )
+
+configure_console_output()
 
 try:
     from PIL import Image
-    Image.MAX_IMAGE_PIXELS = None
-    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+    configure_pillow(Image)
 except ImportError:
     print("[Erreur] La bibliotheque 'Pillow' n'est pas installee.")
     print("Veuillez l'installer avec la commande suivante :")
     print("   pip install Pillow")
     sys.exit(1)
-
-
-def format_size(size_in_bytes):
-    """Formate une taille en octets vers une unité lisible."""
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
-
 
 def get_original_quality(img):
     """Tente de récupérer la qualité d'origine d'un JPEG."""
@@ -57,9 +64,7 @@ def compress_image(input_path, settings=None):
         else ("WEBP" if fmt == "webp" else "PNG")
     )
 
-    # Pour le support JPEG sans canal alpha (Les JPEG ne supportent pas la transparence RGBA)
-    if save_format == "JPEG" and img.mode in ("RGBA", "P", "LA"):
-        img = img.convert("RGB")
+    img = prepare_image_for_format(img, save_format)
 
     if not settings:
         print("\n" + "=" * 55)
@@ -236,7 +241,7 @@ def compress_image(input_path, settings=None):
     return {"choix": choix, "quality": quality if choix == "2" else None, "use_webp": (save_format == "WEBP") if choix == "2" else None}
 
 
-if __name__ == "__main__":
+def print_banner():
     print(
         r"""
  ____            _  ____                                                   
@@ -247,6 +252,19 @@ if __name__ == "__main__":
                                        |_|                                 
     """
     )
+
+
+def get_target_files(paths):
+    """Collecte récursivement les formats acceptés par le compresseur."""
+    return collect_target_files(
+        paths,
+        (".png", ".jpeg", ".jpg", ".webp", ".mpo", ".gif"),
+        item_label="une image supportée",
+    )
+
+
+def main():
+    print_banner()
     if len(sys.argv) < 2:
         print(
             "🖼️  Utilisation : python image_compressor.py <image_ou_dossier_1> [image_ou_dossier_2] ..."
@@ -256,23 +274,7 @@ if __name__ == "__main__":
         print("  python image_compressor.py ./mon_dossier_images")
         sys.exit(0)
 
-    # Collecte de tous les fichiers à traiter
-    target_files = []
-    valid_extensions = (".png", ".jpeg", ".jpg", ".webp", ".mpo", ".gif")
-
-    for path in sys.argv[1:]:
-        if os.path.isdir(path):
-            files = [os.path.join(path, f) for f in os.listdir(path) if f.lower().endswith(valid_extensions)]
-            if not files:
-                print(f"[Alerte] Aucun fichier image valide trouvé dans le dossier : {path}")
-            target_files.extend(files)
-        elif os.path.isfile(path):
-            if path.lower().endswith(valid_extensions):
-                target_files.append(path)
-            else:
-                print(f"[Alerte] Le fichier {path} n'est pas une image supportée.")
-        else:
-            print(f"[Erreur] {path} n'est ni un fichier ni un dossier valide.")
+    target_files = get_target_files(sys.argv[1:])
 
     if not target_files:
         print("[Erreur] Aucun fichier à traiter.")
@@ -299,3 +301,10 @@ if __name__ == "__main__":
     # Traitement individuel (par défaut ou si 'n' a été répondu)
     for path in target_files:
         compress_image(path)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Interruption par l'utilisateur. Arrêt du traitement...")

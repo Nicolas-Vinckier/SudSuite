@@ -1,24 +1,39 @@
 import os
 import sys
 import time
-import io
-import shutil
-import warnings
-from datetime import datetime
 
-# --- COMPATIBILITÉ WINDOWS ---
-if sys.platform == "win32":
-    os.system("")  # Active le support des codes ANSI/VT100
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except AttributeError:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+try:
+    from .sudmedia_utils import (
+        IMAGE_OUTPUT_FORMATS,
+        RESIZE_METHODS,
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        prepare_image_for_format,
+        render_progress,
+        reserve_output_path,
+        resize_image,
+    )
+except ImportError:
+    from sudmedia_utils import (
+        IMAGE_OUTPUT_FORMATS,
+        RESIZE_METHODS,
+        collect_target_files,
+        configure_console_output,
+        configure_pillow,
+        format_size,
+        prepare_image_for_format,
+        render_progress,
+        reserve_output_path,
+        resize_image,
+    )
+
+configure_console_output()
 
 try:
     from PIL import Image
-    # Désactiver la limite de pixels Pillow pour supporter les très grands fichiers (wireframes/maquettes HD)
-    Image.MAX_IMAGE_PIXELS = None
-    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+    configure_pillow(Image)
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
@@ -27,28 +42,11 @@ except ImportError:
 
 # --- CONFIGURATION & CONSTANTES ---
 VALID_EXTENSIONS = (".png", ".jpeg", ".jpg", ".webp", ".bmp", ".tiff", ".gif")
-RESIZE_METHODS = {
-    "1": "Remplissage (Recadrage centré)",
-    "2": "Adaptation (Bandes noires/transparentes)",
-    "3": "Étirage (Peut déformer l'image)",
-}
 SUPPORTED_OUTPUT_FORMATS = {
-    "1": ("PNG", ".png"),
-    "2": ("JPEG", ".jpg"),
-    "3": ("WEBP", ".webp"),
-    "4": ("BMP", ".bmp"),
-    "5": ("TIFF", ".tiff"),
+    key: value
+    for key, value in IMAGE_OUTPUT_FORMATS.items()
+    if value[0] != "GIF"
 }
-
-
-# --- UTILITAIRES ---
-def format_size(size_in_bytes):
-    """Formate une taille en octets vers une unité lisible."""
-    for unit in ["O", "Ko", "Mo", "Go"]:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} To"
 
 
 def print_banner():
@@ -65,95 +63,11 @@ def print_banner():
 
 def get_target_files(paths):
     """Collecte tous les fichiers images valides à partir des chemins fournis."""
-    target_files = []
-    for path in paths:
-        if os.path.isdir(path):
-            for root, dirs, files in os.walk(path):
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if not d.startswith((".", "__"))
-                    and d not in ("node_modules", "dist", "build")
-                ]
-                for f in files:
-                    if f.lower().endswith(VALID_EXTENSIONS):
-                        target_files.append(os.path.join(root, f))
-        elif os.path.isfile(path):
-            if path.lower().endswith(VALID_EXTENSIONS):
-                target_files.append(path)
-    return target_files
-
-
-def render_progress(
-    global_idx, global_total, filename, step=0, total_steps=100, status=""
-):
-    """Barre de progression sur une seule ligne."""
-    try:
-        columns = shutil.get_terminal_size((80, 20)).columns
-    except:
-        columns = 80
-
-    safety_margin = 15
-    available_width = columns - safety_margin
-    g_bar_len = 10
-    l_bar_len = 8
-
-    g_filled = int(g_bar_len * global_idx // global_total) if global_total > 0 else 0
-    g_bar = "█" * g_filled + "░" * (g_bar_len - g_filled)
-    g_pct = (global_idx / global_total * 100) if global_total > 0 else 0
-
-    l_filled = int(l_bar_len * step // total_steps)
-    l_bar = "━" * l_filled + " " * (l_bar_len - l_filled)
-
-    fn = os.path.basename(filename)
-    txt_space = available_width - 45
-    if len(fn) > txt_space:
-        fn = fn[: max(5, txt_space - 3)] + "..."
-
-    line = f" G:[{g_bar}] {g_pct:>3.0f}% | {status:<10} | [{l_bar}] | {fn}"
-    sys.stdout.write("\r" + line.ljust(columns - 1))
-    sys.stdout.flush()
-
-
-# --- LOGIQUE DE REDIMENSIONNEMENT ---
-def resize_image(img, target_w, target_h, method):
-    src_w, src_h = img.size
-
-    # Calcul automatique du ratio si une seule dimension est spécifiée
-    if target_w is not None and target_h is None:
-        target_h = max(1, int(round(src_h * (target_w / src_w))))
-        return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-    elif target_h is not None and target_w is None:
-        target_w = max(1, int(round(src_w * (target_h / src_h))))
-        return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-    elif target_w is None and target_h is None:
-        return img
-
-    # Les deux dimensions sont spécifiées (mode manuel)
-    if method == "1":  # Fill / Center Crop
-        src_ratio = src_w / src_h
-        target_ratio = target_w / target_h
-        if src_ratio > target_ratio:
-            new_h = target_h
-            new_w = int(src_w * (target_h / src_h))
-            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            left = (new_w - target_w) // 2
-            img = img.crop((left, 0, left + target_w, target_h))
-        else:
-            new_w = target_w
-            new_h = int(src_h * (target_w / src_w))
-            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            top = (new_h - target_h) // 2
-            img = img.crop((0, top, target_w, top + target_h))
-    elif method == "2":  # Fit / Letterbox
-        img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
-        new_img = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-        offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
-        new_img.paste(img, offset)
-        img = new_img
-    else:  # Stretch
-        img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-    return img
+    return collect_target_files(
+        paths,
+        VALID_EXTENSIONS,
+        item_label="une image supportée",
+    )
 
 
 def main():
@@ -303,6 +217,7 @@ def main():
     success_count = 0
     total_orig_size = 0
     total_final_size = 0
+    reserved_paths = set()
 
     try:
         for i, f_path in enumerate(files, 1):
@@ -335,9 +250,7 @@ def main():
                     save_fmt = convert_config["format"]
                     ext = convert_config["ext"]
 
-                # Handling JPEG transparency
-                if save_fmt == "JPEG" and img.mode in ("RGBA", "P", "LA"):
-                    img = img.convert("RGB")
+                img = prepare_image_for_format(img, save_fmt)
 
                 # Prepare save params
                 save_params = {"optimize": True}
@@ -363,6 +276,7 @@ def main():
                         suffix = "_new"
 
                 out_path = os.path.join(output_dir, f"{base_name}{suffix}{ext}")
+                out_path = reserve_output_path(out_path, reserved_paths)
 
                 # Avoid collision if output is same as input
                 if os.path.abspath(out_path) == os.path.abspath(f_path):

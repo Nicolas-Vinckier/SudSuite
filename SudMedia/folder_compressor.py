@@ -18,6 +18,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from .sudmedia_utils import clean_input_path, configure_console_output, format_size
+except ImportError:
+    from sudmedia_utils import clean_input_path, configure_console_output, format_size
+
 # ============================================================
 # SudMedia Folder Compressor - version optimisee
 # ============================================================
@@ -330,14 +335,6 @@ class Progress:
             print()
 
 
-def format_size(size_in_bytes):
-    value = float(size_in_bytes)
-    for unit in ["O", "Ko", "Mo", "Go", "To"]:
-        if value < 1024.0 or unit == "To":
-            return f"{value:.2f} {unit}"
-        value /= 1024.0
-
-
 def format_size_short(size_in_bytes):
     value = float(size_in_bytes)
     for unit in ["O", "K", "M", "G", "T"]:
@@ -350,23 +347,6 @@ def format_size_short(size_in_bytes):
         value /= 1024.0
 
 
-def configure_console_output():
-    """Active UTF-8 si necessaire pour afficher les blocs sous Windows."""
-    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
-    try:
-        "█░".encode(encoding)
-        return
-    except (LookupError, UnicodeEncodeError):
-        pass
-
-    reconfigure = getattr(sys.stdout, "reconfigure", None)
-    if reconfigure:
-        try:
-            reconfigure(encoding="utf-8")
-        except (LookupError, OSError):
-            pass
-
-
 def format_duration(seconds):
     if seconds is None:
         return "--:--"
@@ -377,16 +357,6 @@ def format_duration(seconds):
     if hours:
         return f"{hours:d}:{minutes:02d}:{secs:02d}"
     return f"{minutes:02d}:{secs:02d}"
-
-
-def clean_input_path(value):
-    if value is None:
-        return ""
-
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-        value = value[1:-1]
-    return value
 
 
 def resolve_archive_output_path(output_input, default_output_dir, default_filename, expected_ext):
