@@ -42,6 +42,12 @@ Un outil de compression de dossiers intelligent pour archiver vos projets tout e
 - **Progression en temps réel** : Affiche le pourcentage, les fichiers et octets traités, la vitesse actuelle, le temps écoulé et une estimation du temps restant, y compris avec les moteurs externes compatibles.
 - **Estimation & Vérification** : Calcule le gain d'espace et vérifie l'intégrité de l'archive après création.
 
+Le fichier `folder_compressor.py` sert uniquement de façade et d'interface en ligne
+de commande. Son moteur est découpé dans `SudMedia/folder_archive/` : chemins et
+sécurité, progression, détection des outils, compression, extraction et
+vérification. Les anciens imports depuis `SudMedia.folder_compressor` restent
+compatibles.
+
 ### 4. 🏷️ Sud Rename (`image_renamer.py`)
 
 Un outil de renommage en masse puissant basé sur la date de modification des fichiers. Idéal pour uniformiser les noms de fichiers provenant de différentes sources.
