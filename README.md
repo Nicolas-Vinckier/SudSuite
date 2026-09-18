@@ -192,6 +192,14 @@ Depuis la racine de SudSuite :
 py -m unittest discover -v
 ```
 
+Le lanceur dédié ci-dessous découvre et exécute tous les fichiers
+`SudMedia/tests/test_*.py` (unitaires et intégration légère), y compris les
+tests ajoutés ultérieurement :
+
+```bash
+py .\SudMedia\tests\test_all.py
+```
+
 Les fichiers de test peuvent également être lancés directement, y compris depuis
 le dossier `SudMedia` :
 
