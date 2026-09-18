@@ -4,6 +4,7 @@ import sys
 try:
     from .sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        Progress,
         ProcessingStats,
         RESIZE_METHODS,
         analyze_quality,
@@ -15,13 +16,13 @@ try:
         prepare_image_for_quality,
         print_processing_summary,
         print_quality_analysis,
-        render_progress,
         reserve_output_path,
         resize_image,
     )
 except ImportError:
     from sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        Progress,
         ProcessingStats,
         RESIZE_METHODS,
         analyze_quality,
@@ -33,7 +34,6 @@ except ImportError:
         prepare_image_for_quality,
         print_processing_summary,
         print_quality_analysis,
-        render_progress,
         reserve_output_path,
         resize_image,
     )
@@ -229,6 +229,7 @@ def main():
     print("\n--- 🚀 TRAITEMENT EN COURS ---")
     stats = ProcessingStats(len(files))
     reserved_paths = set()
+    progress = Progress(len(files), label="Image Master").start()
 
     try:
         for i, f_path in enumerate(files, 1):
@@ -236,7 +237,7 @@ def main():
                 orig_size = os.path.getsize(f_path)
 
                 # Image processing steps
-                render_progress(i - 1, len(files), f_path, 0, 100, "Ouverture")
+                progress.update_item(i - 1, item=f_path, step=0, status="Ouverture")
                 with Image.open(f_path) as source_image:
                     source_format = source_image.format or "PNG"
                     original_quality = get_original_image_quality(source_image)
@@ -244,7 +245,7 @@ def main():
 
                 # Step 1: Resize
                 if do_resize:
-                    render_progress(i - 1, len(files), f_path, 30, 100, "Resize")
+                    progress.update_item(i - 1, item=f_path, step=30, status="Redimensionnement")
                     img = resize_image(
                         img,
                         resize_config["w"],
@@ -253,7 +254,7 @@ def main():
                     )
 
                 # Step 2 & 3: Convert & Compress (determined during save)
-                render_progress(i - 1, len(files), f_path, 70, 100, "Optimisation")
+                progress.update_item(i - 1, item=f_path, step=70, status="Optimisation")
 
                 # Determine Format
                 save_fmt = source_format
@@ -306,13 +307,16 @@ def main():
                 img.save(out_path, format=save_fmt, **save_params)
 
                 stats.add_success(orig_size, os.path.getsize(out_path))
-                render_progress(i, len(files), f_path, 100, 100, "Terminé")
+                progress.complete_file(item=f_path, status="Terminé")
 
             except Exception as e:
                 stats.add_error()
+                progress.complete_file(item=f_path, status="Erreur")
                 print(f"\n❌ Erreur sur {os.path.basename(f_path)}: {e}")
 
+        progress.finish()
     except KeyboardInterrupt:
+        progress.abort()
         print("\n\n⚠️ Interruption utilisateur.")
 
     # 5. Bilan

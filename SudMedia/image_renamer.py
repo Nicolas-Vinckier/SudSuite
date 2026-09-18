@@ -7,6 +7,7 @@ try:
     from .sudmedia_utils import (
         IMAGE_EXTENSIONS,
         MEDIA_EXTENSIONS,
+        Progress,
         VIDEO_EXTENSIONS,
         clean_input_path,
         configure_console_output,
@@ -15,6 +16,7 @@ except ImportError:
     from sudmedia_utils import (
         IMAGE_EXTENSIONS,
         MEDIA_EXTENSIONS,
+        Progress,
         VIDEO_EXTENSIONS,
         clean_input_path,
         configure_console_output,
@@ -158,40 +160,32 @@ def run_rename():
     renamed_count = 0
     error_count = 0
     file_count = len(files)
-    bar_length = 40
+    progress = Progress(file_count, label="Renommage").start()
 
     # On trie les fichiers par date de modification pour garder une logique d'indexation
     files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)))
 
-    for i, filename in enumerate(files):
-        old_path = os.path.join(folder_path, filename)
-        mtime = os.path.getmtime(old_path)
+    try:
+        for filename in files:
+            old_path = os.path.join(folder_path, filename)
+            mtime = os.path.getmtime(old_path)
+            _name_only, extension = os.path.splitext(filename)
+            base_new_name = format_timestamp(mtime, rename_format)
+            final_name = get_unique_filename(dest_folder, base_new_name, extension)
+            new_path = os.path.join(dest_folder, f"{final_name}{extension}")
 
-        name_only, extension = os.path.splitext(filename)
-        base_new_name = format_timestamp(mtime, rename_format)
-
-        # Trouver un nom unique dans le dossier de destination
-        final_name = get_unique_filename(dest_folder, base_new_name, extension)
-        new_path = os.path.join(dest_folder, f"{final_name}{extension}")
-
-        try:
-            # On utilise copy2 pour préserver la date de modification originale
-            shutil.copy2(old_path, new_path)
-            renamed_count += 1
-        except OSError:
-            error_count += 1
-
-        # Barre de chargement
-        processed_files = i + 1
-        percent = (processed_files / file_count) * 100
-        filled = int(bar_length * processed_files // file_count)
-        bar = "█" * filled + "░" * (bar_length - filled)
-        print(
-            f"\r[Renommage] |{bar}| {percent:.1f}% ({processed_files}/{file_count})",
-            end="",
-        )
-
-    print()  # Pour passer à la ligne après la barre
+            try:
+                shutil.copy2(old_path, new_path)
+                renamed_count += 1
+                status = "Copié"
+            except OSError:
+                error_count += 1
+                status = "Erreur"
+            progress.complete_file(item=filename, status=status)
+        progress.finish()
+    except BaseException:
+        progress.abort()
+        raise
 
     # 7. Rapport final
     print("\n✅ Opération terminée !")

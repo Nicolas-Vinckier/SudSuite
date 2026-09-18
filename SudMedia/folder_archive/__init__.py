@@ -14,6 +14,7 @@ from .paths import (
     safe_member_path,
     scan_folder,
 )
+from .progress import Progress, ProgressReader
 from .toolchain import describe_backend, detect_toolchain, parse_threads
 from .verification import verify_archive
 
@@ -21,6 +22,8 @@ __all__ = [
     "CompressionBackendError",
     "ExtractionBackendError",
     "FileEntry",
+    "Progress",
+    "ProgressReader",
     "Toolchain",
     "archive_base_name",
     "compress_tar_xz_python",

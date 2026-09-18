@@ -4,25 +4,25 @@ import sys
 try:
     from .sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        Progress,
         ProcessingStats,
         collect_target_files,
         configure_console_output,
         configure_pillow,
         image_save_options,
         print_processing_summary,
-        render_progress,
         reserve_output_path,
     )
 except ImportError:
     from sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        Progress,
         ProcessingStats,
         collect_target_files,
         configure_console_output,
         configure_pillow,
         image_save_options,
         print_processing_summary,
-        render_progress,
         reserve_output_path,
     )
 
@@ -109,6 +109,7 @@ def convert_pdf(
     silent=False,
     global_info=(0, 0),
     reserved_paths=None,
+    progress=None,
 ):
     """Convertit un PDF en une ou plusieurs images."""
     idx, total = global_info
@@ -127,9 +128,14 @@ def convert_pdf(
         for i in range(num_pages):
             page = doc.load_page(i)
 
-            # Mise à jour de la barre de progression pour la page en cours
-            step_pct = int((i / num_pages) * 100)
-            render_progress(idx - 1, total, input_path, step=step_pct, total_steps=100)
+            if progress:
+                progress.update_item(
+                    idx - 1,
+                    item=input_path,
+                    step=i,
+                    total_steps=max(1, num_pages),
+                    status=f"Page {i + 1}/{num_pages}",
+                )
 
             # Rendu de la page
             pix = page.get_pixmap(matrix=mat, alpha=False)
@@ -158,9 +164,6 @@ def convert_pdf(
             total_new_size += os.path.getsize(output_path)
 
         doc.close()
-
-        # Progression à 100% pour ce fichier
-        render_progress(idx, total, input_path, step=100, total_steps=100)
 
         return True, original_size, total_new_size
     except Exception as e:
@@ -267,6 +270,7 @@ def main():
     total_files = len(files)
     stats = ProcessingStats(total_files)
     reserved_paths = set()
+    progress = Progress(total_files, label="PDF vers image").start()
 
     try:
         for i, f in enumerate(files, 1):
@@ -280,15 +284,17 @@ def main():
                 silent=True,
                 global_info=(i, total_files),
                 reserved_paths=reserved_paths,
+                progress=progress,
             )
             if res[0] is True:
                 stats.add_success(res[1], res[2])
+                progress.complete_file(item=f, status="Converti")
             else:
                 stats.add_error()
-
-        # On saute une ligne après les barres de chargement
-        print()
+                progress.complete_file(item=f, status="Erreur")
+        progress.finish()
     except KeyboardInterrupt:
+        progress.abort()
         print("\n\n⚠️  Interruption par l'utilisateur. Arrêt du traitement...")
 
     # 6. Bilan

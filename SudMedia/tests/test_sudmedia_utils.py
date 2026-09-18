@@ -18,6 +18,7 @@ except ImportError:
     Image = None
 
 from SudMedia.sudmedia_utils import (
+    Progress,
     ProcessingStats,
     analyze_quality,
     analyze_size_change,
@@ -109,6 +110,26 @@ class DisplayUtilitiesTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             render_progress(0, 0, "image.png", total_steps=0)
         self.assertIn("image.png", output.getvalue())
+
+    def test_progress_supports_files_bytes_and_indeterminate_work(self):
+        progress = Progress(2, 100, enabled=False)
+        progress.set_item("photo.jpg", "Compression")
+        progress.update_bytes(40)
+        progress.complete_file(10)
+
+        self.assertEqual(progress.completed_files, 1)
+        self.assertEqual(progress.processed_bytes, 50)
+        self.assertEqual(progress.current_item, "photo.jpg")
+
+        indeterminate = Progress(None, label="Analyse", enabled=False)
+        indeterminate.advance(item="fichier.bin")
+        self.assertTrue(indeterminate.indeterminate)
+        self.assertEqual(indeterminate.completed_files, 1)
+
+    def test_archive_progress_reuses_the_shared_implementation(self):
+        from SudMedia.folder_archive.progress import Progress as ArchiveProgress
+
+        self.assertIs(ArchiveProgress, Progress)
 
     def test_size_analysis_reports_gain_and_increase(self):
         gain = analyze_size_change(1000, 750)

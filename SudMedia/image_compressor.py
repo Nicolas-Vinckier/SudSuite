@@ -12,6 +12,7 @@ try:
         format_size,
         get_original_image_quality,
         image_save_options,
+        Progress,
         prepare_image_for_format,
         prepare_image_for_quality,
         print_quality_analysis,
@@ -26,6 +27,7 @@ except ImportError:
         format_size,
         get_original_image_quality,
         image_save_options,
+        Progress,
         prepare_image_for_format,
         prepare_image_for_quality,
         print_quality_analysis,
@@ -41,6 +43,19 @@ except ImportError:
     print("Veuillez l'installer avec la commande suivante :")
     print("   pip install Pillow")
     sys.exit(1)
+
+
+def save_to_buffer_with_progress(image, buffer, save_format, save_params, input_path, status):
+    """Encode une image en mémoire avec la progression SudMedia commune."""
+    progress = Progress(1, label="Compression image").start()
+    progress.set_item(input_path, status)
+    try:
+        image.save(buffer, format=save_format, **save_params)
+        progress.complete_file(item=input_path, status="Analysé")
+        progress.finish()
+    except BaseException:
+        progress.abort()
+        raise
 
 
 def compress_image(input_path, settings=None):
@@ -101,7 +116,9 @@ def compress_image(input_path, settings=None):
             compression_mode="lossless",
             original_quality=original_quality,
         )
-        img.save(buffer, format=save_format, **save_params)
+        save_to_buffer_with_progress(
+            img, buffer, save_format, save_params, input_path, "Sans perte"
+        )
 
         new_size = buffer.tell()
         if not settings:
@@ -148,7 +165,9 @@ def compress_image(input_path, settings=None):
             compression_mode="lossy",
             quality=quality,
         )
-        img.save(buffer, format=save_format, **save_params)
+        save_to_buffer_with_progress(
+            img, buffer, save_format, save_params, input_path, "Avec perte"
+        )
 
         new_size = buffer.tell()
 

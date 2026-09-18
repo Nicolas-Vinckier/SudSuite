@@ -7,9 +7,9 @@ from pathlib import Path
 from dataclasses import dataclass, field
 
 try:
-    from .sudmedia_utils import clean_input_path, configure_console_output, format_size
+    from .sudmedia_utils import Progress, clean_input_path, configure_console_output, format_size
 except ImportError:
-    from sudmedia_utils import clean_input_path, configure_console_output, format_size
+    from sudmedia_utils import Progress, clean_input_path, configure_console_output, format_size
 
 configure_console_output()
 
@@ -239,7 +239,16 @@ def add_to_top_files(heap, limit, file_size, file_path, root_path):
             heapq.heapreplace(heap, item)
 
 
-def scan_folder(folder_path, root_path, excluded_names, top_files_heap, top_files_limit, errors, stats):
+def scan_folder(
+    folder_path,
+    root_path,
+    excluded_names,
+    top_files_heap,
+    top_files_limit,
+    errors,
+    stats,
+    progress=None,
+):
     node = FolderNode(path=folder_path)
     stats["folders_scanned"] += 1
 
@@ -265,6 +274,7 @@ def scan_folder(folder_path, root_path, excluded_names, top_files_heap, top_file
                             top_files_limit=top_files_limit,
                             errors=errors,
                             stats=stats,
+                            progress=progress,
                         )
 
                         node.children.append(child_node)
@@ -278,6 +288,8 @@ def scan_folder(folder_path, root_path, excluded_names, top_files_heap, top_file
                         node.size += file_size
                         node.file_count += 1
                         stats["files_scanned"] += 1
+                        if progress:
+                            progress.advance(item=entry.name, status="Analyse")
 
                         add_to_top_files(
                             heap=top_files_heap,
@@ -286,13 +298,6 @@ def scan_folder(folder_path, root_path, excluded_names, top_files_heap, top_file
                             file_path=entry_path,
                             root_path=root_path,
                         )
-
-                        if stats["files_scanned"] % 500 == 0:
-                            print(
-                                f"\r[Analyse] {stats['folders_scanned']} dossiers | "
-                                f"{stats['files_scanned']} fichiers",
-                                end="",
-                            )
 
                 except PermissionError:
                     errors.append(f"Accès refusé : {entry_path}")
@@ -560,23 +565,25 @@ def analyze_folder_weights(args):
         "folders_scanned": 0,
         "files_scanned": 0,
     }
+    progress = Progress(None, label="Analyse des poids").start()
 
-    root_node = scan_folder(
-        folder_path=target_folder,
-        root_path=target_folder,
-        excluded_names=excluded_names,
-        top_files_heap=top_files_heap,
-        top_files_limit=top_files_limit,
-        errors=errors,
-        stats=stats,
-    )
+    try:
+        root_node = scan_folder(
+            folder_path=target_folder,
+            root_path=target_folder,
+            excluded_names=excluded_names,
+            top_files_heap=top_files_heap,
+            top_files_limit=top_files_limit,
+            errors=errors,
+            stats=stats,
+            progress=progress,
+        )
+        progress.finish(status="Analyse terminée")
+    except BaseException:
+        progress.abort()
+        raise
 
     end_time = time.time()
-
-    print(
-        f"\r[Analyse] {stats['folders_scanned']} dossiers | "
-        f"{stats['files_scanned']} fichiers"
-    )
 
     print_tree(root_node, max_depth)
     print_top_files(top_files_heap, top_files_limit)

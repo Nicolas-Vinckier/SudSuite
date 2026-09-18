@@ -1,29 +1,28 @@
 import os
 import sys
-import time
 from datetime import datetime
 
 try:
     from .sudmedia_utils import (
+        Progress,
         ProcessingStats,
         RESIZE_METHODS,
         collect_target_files,
         configure_console_output,
         configure_pillow,
         print_processing_summary,
-        render_progress,
         reserve_output_path,
         resize_image,
     )
 except ImportError:
     from sudmedia_utils import (
+        Progress,
         ProcessingStats,
         RESIZE_METHODS,
         collect_target_files,
         configure_console_output,
         configure_pillow,
         print_processing_summary,
-        render_progress,
         reserve_output_path,
         resize_image,
     )
@@ -71,6 +70,7 @@ def process_file(
     global_info,
     override_name=None,
     reserved_paths=None,
+    progress=None,
 ):
     idx, total = global_info
     try:
@@ -80,11 +80,8 @@ def process_file(
         with Image.open(file_path) as source_image:
             img = source_image.copy()
 
-        # Simulation progression
-        for s in range(0, 51, 10):
-            render_progress(idx - 1, total, file_path, step=s, total_steps=100)
-            time.sleep(0.01)
-
+        if progress:
+            progress.set_item(file_path, "Redimensionnement")
         img = resize_image(img, target_w, target_h, method_choice)
 
         if override_name:
@@ -99,15 +96,12 @@ def process_file(
             reserved_paths,
         )
 
-        for s in range(60, 101, 10):
-            render_progress(idx - 1, total, file_path, step=s, total_steps=100)
-            time.sleep(0.01)
-
         # Preserve alpha if JPEG input but we save as PNG anyway
+        if progress:
+            progress.set_item(file_path, "Sauvegarde")
         img.save(output_path, "PNG", optimize=True)
 
         new_size = os.path.getsize(output_path)
-        render_progress(idx, total, file_path, step=100, total_steps=100)
         return True, original_size, new_size
     except Exception as e:
         print(f"\n❌ Erreur sur {file_path}: {e}")
@@ -230,6 +224,7 @@ def main():
     print("\n--- 🚀 TRAITEMENT ---")
     stats = ProcessingStats(len(files))
     reserved_paths = set()
+    progress = Progress(len(files), label="Redimensionnement").start()
 
     try:
         for i, f in enumerate(files, 1):
@@ -247,13 +242,17 @@ def main():
                 (i, len(files)),
                 override_name,
                 reserved_paths,
+                progress,
             )
             if res:
                 stats.add_success(orig, new)
+                progress.complete_file(item=f, status="Redimensionné")
             else:
                 stats.add_error()
-        print()
+                progress.complete_file(item=f, status="Erreur")
+        progress.finish()
     except KeyboardInterrupt:
+        progress.abort()
         print("\n⚠️ Interruption utilisateur.")
 
     # 7. Bilan

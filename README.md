@@ -171,6 +171,8 @@ Les règles communes sont regroupées dans `SudMedia/sudmedia_utils.py` :
 - `analyze_quality()` normalise la qualité et estime son niveau de risque ;
 - `image_save_options()` fournit les paramètres Pillow cohérents par format ;
 - `ProcessingStats` et `print_processing_summary()` produisent les bilans de lot ;
+- `Progress` fournit la même barre (fichiers, octets, vitesse, ETA et mode
+  indéterminé) à tous les traitements, y compris l'archiveur ;
 - `prepare_image_for_quality()` applique les transformations nécessaires avant sauvegarde.
 
 Les scripts gardent uniquement leurs menus et leur workflow métier.

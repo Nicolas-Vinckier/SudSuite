@@ -1,10 +1,10 @@
 import os
 import sys
-import time
 
 try:
     from .sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        Progress,
         ProcessingStats,
         collect_target_files,
         configure_console_output,
@@ -12,12 +12,12 @@ try:
         image_save_options,
         prepare_image_for_format,
         print_processing_summary,
-        render_progress,
         reserve_output_path,
     )
 except ImportError:
     from sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        Progress,
         ProcessingStats,
         collect_target_files,
         configure_console_output,
@@ -25,7 +25,6 @@ except ImportError:
         image_save_options,
         prepare_image_for_format,
         print_processing_summary,
-        render_progress,
         reserve_output_path,
     )
 
@@ -74,6 +73,7 @@ def convert_image(
     silent=False,
     global_info=(0, 0),
     reserved_paths=None,
+    progress=None,
 ):
     """Convertit une image unique ou l'ignore si elle existe déjà."""
     idx, total = global_info
@@ -90,25 +90,25 @@ def convert_image(
 
         # Vérification si déjà fait
         if os.path.exists(output_path):
-            render_progress(idx, total, input_path, step=100, total_steps=100)
+            if progress:
+                progress.set_item(input_path, "Déjà converti")
             return "skipped", 0, 0
 
-        # Simulation de la progression par image
-        for s in range(0, 101, 20):
-            render_progress(idx - 1, total, input_path, step=s, total_steps=100)
-            time.sleep(0.01)
-
+        if progress:
+            progress.set_item(input_path, "Ouverture")
         with Image.open(input_path) as source_image:
             img = source_image.copy()
 
+        if progress:
+            progress.set_item(input_path, "Conversion")
         img = prepare_image_for_format(img, target_format)
 
         # Sauvegarde
         save_params = image_save_options(target_format, quality=100)
 
+        if progress:
+            progress.set_item(input_path, "Sauvegarde")
         img.save(output_path, format=target_format, **save_params)
-
-        render_progress(idx, total, input_path, step=100, total_steps=100)
 
         new_size = os.path.getsize(output_path)
         return True, original_size, new_size
@@ -180,6 +180,7 @@ def main():
     total_files = len(files)
     stats = ProcessingStats(total_files)
     reserved_paths = set()
+    progress = Progress(total_files, label="Conversion").start()
 
     try:
         for i, f in enumerate(files, 1):
@@ -191,17 +192,20 @@ def main():
                 silent=True,
                 global_info=(i, total_files),
                 reserved_paths=reserved_paths,
+                progress=progress,
             )
             if res == "skipped":
                 stats.add_skipped()
+                progress.complete_file(item=f, status="Ignoré")
             elif res[0] is True:
                 stats.add_success(res[1], res[2])
+                progress.complete_file(item=f, status="Converti")
             else:
                 stats.add_error()
-
-        # On saute une ligne après les barres de chargement
-        print()
+                progress.complete_file(item=f, status="Erreur")
+        progress.finish()
     except KeyboardInterrupt:
+        progress.abort()
         print("\n\n⚠️  Interruption par l'utilisateur. Arrêt du traitement...")
 
     # 6. Bilan

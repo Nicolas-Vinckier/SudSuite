@@ -9,7 +9,9 @@ from pathlib import Path
 try:
     from .sudmedia_utils import (
         MEDIA_EXTENSIONS,
+        Progress,
         clean_input_path,
+        collect_target_files,
         configure_console_output,
         paths_overlap,
         unique_available_path,
@@ -18,7 +20,9 @@ try:
 except ImportError:
     from sudmedia_utils import (
         MEDIA_EXTENSIONS,
+        Progress,
         clean_input_path,
+        collect_target_files,
         configure_console_output,
         paths_overlap,
         unique_available_path,
@@ -331,50 +335,42 @@ def copier_coller_media(config):
         print("Répertoire des doublons créé :", destination_doublon)
 
     fichiers_traites = 0
+    media_files = collect_target_files(
+        [source], MEDIA_EXTENSIONS, item_label="un média", reporter=None
+    )
+    progress = Progress(len(media_files), label="Tri des médias").start()
 
-    for root, dirs, files in walk_filtered(source):
-        for filename in files:
-            filepath = os.path.join(root, filename)
-
-            # Vérifier l'extension pour ignorer les fichiers qui ne sont pas des médias
-            if not filename.lower().endswith(MEDIA_EXTENSIONS):
-                continue
-
+    for filepath in media_files:
+        filename = os.path.basename(filepath)
+        try:
             annee, mois = get_date_from_file(
                 filepath, filename, mode_tri, config.get("format_nom")
             )
-
             if not annee or not mois:
+                progress.complete_file(item=filename, status="Date inconnue")
                 continue
-
             destination_annee = os.path.join(destination, annee)
             destination_mois = os.path.join(destination_annee, mois)
-
-            if not os.path.exists(destination_annee):
-                os.makedirs(destination_annee)
-
-            if not os.path.exists(destination_mois):
-                os.makedirs(destination_mois)
-
+            os.makedirs(destination_annee, exist_ok=True)
+            os.makedirs(destination_mois, exist_ok=True)
             destination_filepath = os.path.join(destination_mois, filename)
-
             if os.path.exists(destination_filepath):
                 destination_doublon_mois = os.path.join(destination_doublon, mois)
-                if not os.path.exists(destination_doublon_mois):
-                    os.makedirs(destination_doublon_mois)
-
+                os.makedirs(destination_doublon_mois, exist_ok=True)
                 duplicate_path = unique_available_path(
                     os.path.join(destination_doublon_mois, filename)
                 )
                 shutil.move(filepath, duplicate_path)
-                print(
-                    f"Doublon - Fichier deplace : {duplicate_path}"
-                )
+                status = "Doublon"
             else:
                 shutil.move(filepath, destination_filepath)
-                print(f"Fichier deplace : {destination_filepath}")
-
+                status = "Classé"
             fichiers_traites += 1
+        except OSError:
+            status = "Erreur"
+        progress.complete_file(item=filename, status=status)
+
+    progress.finish()
 
     print(f"\nNettoyage de '{source}'...")
     # Supprimer les dossiers vides de la source
@@ -408,31 +404,30 @@ def tri_inverse(config):
 
     fichiers_deplaces = 0
     print(f"\n--- Lancement du tri inverse (Dest -> Source) ---")
+    media_files = collect_target_files(
+        [destination], MEDIA_EXTENSIONS, item_label="un média", reporter=None
+    )
+    progress = Progress(len(media_files), label="Restauration").start()
 
-    for root, dirs, files in walk_filtered(destination):
-        # Ignorer le dossier 'doublon' s'il existe et qu'on ne veut pas y toucher
-        # (Ou on peut choisir de le vider aussi, ici on vide tout)
-        for filename in files:
-            if filename.lower().endswith(MEDIA_EXTENSIONS):
-                filepath = os.path.join(root, filename)
-                dest_path = os.path.join(source, filename)
+    for filepath in media_files:
+        filename = os.path.basename(filepath)
+        dest_path = os.path.join(source, filename)
+        if os.path.exists(dest_path):
+            name, ext = os.path.splitext(filename)
+            dest_path = os.path.join(
+                source,
+                f"{name}_restaure_{datetime.datetime.now().strftime('%H%M%S')}{ext}",
+            )
+            dest_path = unique_available_path(dest_path)
+        try:
+            shutil.move(filepath, dest_path)
+            fichiers_deplaces += 1
+            status = "Restauré"
+        except OSError:
+            status = "Erreur"
+        progress.complete_file(item=filename, status=status)
 
-                # Gestion simple si le fichier existe déjà dans la source
-                # (on ajoute un timestamp pour éviter l'écrasement)
-                if os.path.exists(dest_path):
-                    name, ext = os.path.splitext(filename)
-                    dest_path = os.path.join(
-                        source,
-                        f"{name}_restaure_{datetime.datetime.now().strftime('%H%M%S')}{ext}",
-                    )
-                    dest_path = unique_available_path(dest_path)
-
-                try:
-                    shutil.move(filepath, dest_path)
-                    print(f"Restaure : {filename} -> {source}")
-                    fichiers_deplaces += 1
-                except Exception as e:
-                    print(f"[Erreur] Impossible de deplacer {filename} : {e}")
+    progress.finish()
 
     print(f"\nNettoyage de '{destination}'...")
     # Supprimer les dossiers vides de la destination
