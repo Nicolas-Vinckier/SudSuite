@@ -5,22 +5,24 @@ from datetime import datetime
 
 try:
     from .sudmedia_utils import (
+        ProcessingStats,
         RESIZE_METHODS,
         collect_target_files,
         configure_console_output,
         configure_pillow,
-        format_size,
+        print_processing_summary,
         render_progress,
         reserve_output_path,
         resize_image,
     )
 except ImportError:
     from sudmedia_utils import (
+        ProcessingStats,
         RESIZE_METHODS,
         collect_target_files,
         configure_console_output,
         configure_pillow,
-        format_size,
+        print_processing_summary,
         render_progress,
         reserve_output_path,
         resize_image,
@@ -75,7 +77,8 @@ def process_file(
         original_size = os.path.getsize(file_path)
         base_name = os.path.splitext(os.path.basename(file_path))[0]
 
-        img = Image.open(file_path)
+        with Image.open(file_path) as source_image:
+            img = source_image.copy()
 
         # Simulation progression
         for s in range(0, 51, 10):
@@ -225,12 +228,9 @@ def main():
 
     # 6. Traitement
     print("\n--- 🚀 TRAITEMENT ---")
-    success_count = 0
-    total_original = 0
-    total_new = 0
+    stats = ProcessingStats(len(files))
     reserved_paths = set()
 
-    start_time = time.time()
     try:
         for i, f in enumerate(files, 1):
             override_name = None
@@ -249,29 +249,21 @@ def main():
                 reserved_paths,
             )
             if res:
-                success_count += 1
-                total_original += orig
-                total_new += new
+                stats.add_success(orig, new)
+            else:
+                stats.add_error()
         print()
     except KeyboardInterrupt:
         print("\n⚠️ Interruption utilisateur.")
 
     # 7. Bilan
-    duration = time.time() - start_time
-    print("\n" + "=" * 40)
-    print("📊 BILAN FINAL")
-    print("=" * 40)
-    print(f"✅ Images traitées : {success_count}/{len(files)}")
-    print(f"⏱️ Temps écoulé    : {duration:.2f} secondes")
-    print(f"📦 Taille initiale : {format_size(total_original)}")
-    print(f"📦 Taille finale   : {format_size(total_new)}")
-
-    diff = total_new - total_original
-    if diff < 0:
-        print(f"📉 Gain d'espace   : {format_size(abs(diff))}")
-    else:
-        print(f"📈 Augmentation    : {format_size(diff)}")
-    print("=" * 40)
+    print_processing_summary(
+        stats,
+        title="BILAN FINAL",
+        item_label="Images redimensionnées",
+        output_path=output_dir,
+        width=40,
+    )
     print("🚀 Fini !")
 
 

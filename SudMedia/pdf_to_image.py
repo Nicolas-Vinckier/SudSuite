@@ -4,20 +4,24 @@ import sys
 try:
     from .sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        ProcessingStats,
         collect_target_files,
         configure_console_output,
         configure_pillow,
-        format_size,
+        image_save_options,
+        print_processing_summary,
         render_progress,
         reserve_output_path,
     )
 except ImportError:
     from sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        ProcessingStats,
         collect_target_files,
         configure_console_output,
         configure_pillow,
-        format_size,
+        image_save_options,
+        print_processing_summary,
         render_progress,
         reserve_output_path,
     )
@@ -148,11 +152,7 @@ def convert_pdf(
                 reserved_paths,
             )
 
-            save_params = {}
-            if target_format == "JPEG":
-                save_params = {"quality": 95, "subsampling": 0}
-            elif target_format == "PNG":
-                save_params = {"optimize": True}
+            save_params = image_save_options(target_format, quality=95)
 
             img.save(output_path, format=target_format, **save_params)
             total_new_size += os.path.getsize(output_path)
@@ -264,10 +264,8 @@ def main():
 
     # 5. Traitement
     print("\n--- ⚙️ TRAITEMENT EN COURS ---")
-    success_count = 0
-    total_original_size = 0
-    total_new_size = 0
     total_files = len(files)
+    stats = ProcessingStats(total_files)
     reserved_paths = set()
 
     try:
@@ -284,9 +282,9 @@ def main():
                 reserved_paths=reserved_paths,
             )
             if res[0] is True:
-                success_count += 1
-                total_original_size += res[1]
-                total_new_size += res[2]
+                stats.add_success(res[1], res[2])
+            else:
+                stats.add_error()
 
         # On saute une ligne après les barres de chargement
         print()
@@ -294,19 +292,14 @@ def main():
         print("\n\n⚠️  Interruption par l'utilisateur. Arrêt du traitement...")
 
     # 6. Bilan
-    print("\n" + "=" * 40)
-    print("📊 BILAN DE L'OPÉRATION")
-    print("=" * 40)
-    print(f"✅ PDF traités avec succès      : {success_count}/{total_files}")
-    print(f"📦 Taille totale originale      : {format_size(total_original_size)}")
-    print(f"📦 Taille totale images (Gén.)  : {format_size(total_new_size)}")
-
-    variation = total_new_size - total_original_size
-    if variation > 0:
-        print(f"📈 Augmentation de taille       : {format_size(variation)}")
-    else:
-        print(f"📉 Gain d'espace                : {format_size(abs(variation))}")
-    print("=" * 40)
+    print_processing_summary(
+        stats,
+        item_label="PDF convertis",
+        original_label="Taille des PDF",
+        final_label="Taille des images",
+        output_path=output_dir,
+        width=40,
+    )
     print("🚀 Travail terminé !")
 
 

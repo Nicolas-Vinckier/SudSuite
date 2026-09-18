@@ -1,16 +1,20 @@
 import os
 import sys
-import time
 
 try:
     from .sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        ProcessingStats,
         RESIZE_METHODS,
+        analyze_quality,
         collect_target_files,
         configure_console_output,
         configure_pillow,
-        format_size,
-        prepare_image_for_format,
+        get_original_image_quality,
+        image_save_options,
+        prepare_image_for_quality,
+        print_processing_summary,
+        print_quality_analysis,
         render_progress,
         reserve_output_path,
         resize_image,
@@ -18,12 +22,17 @@ try:
 except ImportError:
     from sudmedia_utils import (
         IMAGE_OUTPUT_FORMATS,
+        ProcessingStats,
         RESIZE_METHODS,
+        analyze_quality,
         collect_target_files,
         configure_console_output,
         configure_pillow,
-        format_size,
-        prepare_image_for_format,
+        get_original_image_quality,
+        image_save_options,
+        prepare_image_for_quality,
+        print_processing_summary,
+        print_quality_analysis,
         render_progress,
         reserve_output_path,
         resize_image,
@@ -189,11 +198,16 @@ def main():
         print("1. SANS PERTE (Optimisation)")
         print("2. AVEC PERTE (Réduction qualité)")
         mode = input("Mode (1 ou 2) : ").strip()
+        if mode not in {"1", "2"}:
+            print("❌ Mode de compression invalide.")
+            sys.exit(1)
         compress_config["mode"] = mode
         if mode == "2":
-            compress_config["quality"] = int(
-                input("Qualité (1-100, ex: 75) : ").strip() or "75"
+            quality_analysis = analyze_quality(
+                input("Qualité (1-100, ex: 75) : ").strip() or 75
             )
+            compress_config["quality"] = quality_analysis.quality
+            print_quality_analysis(quality_analysis)
 
     # 3. Dossier de sortie
     is_single_file = len(files) == 1
@@ -213,21 +227,20 @@ def main():
 
     # 4. Traitement
     print("\n--- 🚀 TRAITEMENT EN COURS ---")
-    start_time = time.time()
-    success_count = 0
-    total_orig_size = 0
-    total_final_size = 0
+    stats = ProcessingStats(len(files))
     reserved_paths = set()
 
     try:
         for i, f_path in enumerate(files, 1):
             try:
                 orig_size = os.path.getsize(f_path)
-                total_orig_size += orig_size
 
                 # Image processing steps
                 render_progress(i - 1, len(files), f_path, 0, 100, "Ouverture")
-                img = Image.open(f_path)
+                with Image.open(f_path) as source_image:
+                    source_format = source_image.format or "PNG"
+                    original_quality = get_original_image_quality(source_image)
+                    img = source_image.copy()
 
                 # Step 1: Resize
                 if do_resize:
@@ -243,25 +256,33 @@ def main():
                 render_progress(i - 1, len(files), f_path, 70, 100, "Optimisation")
 
                 # Determine Format
-                save_fmt = img.format if img.format else "PNG"
+                save_fmt = source_format
                 ext = os.path.splitext(f_path)[1]
 
                 if do_convert:
                     save_fmt = convert_config["format"]
                     ext = convert_config["ext"]
 
-                img = prepare_image_for_format(img, save_fmt)
-
-                # Prepare save params
-                save_params = {"optimize": True}
+                compression_mode = "standard"
+                quality = 95
                 if do_compress:
-                    if compress_config["mode"] == "1":  # Lossless
-                        if save_fmt == "WEBP":
-                            save_params["lossless"] = True
-                        if save_fmt == "JPEG":
-                            save_params["quality"] = "keep"
-                    else:  # Lossy
-                        save_params["quality"] = compress_config.get("quality", 75)
+                    compression_mode = (
+                        "lossless" if compress_config["mode"] == "1" else "lossy"
+                    )
+                    quality = compress_config.get("quality", 75)
+
+                img = prepare_image_for_quality(
+                    img,
+                    save_fmt,
+                    compression_mode=compression_mode,
+                    quality=quality,
+                )
+                save_params = image_save_options(
+                    save_fmt,
+                    compression_mode=compression_mode,
+                    quality=quality,
+                    original_quality=original_quality,
+                )
 
                 # Output path
                 base_name = os.path.splitext(os.path.basename(f_path))[0]
@@ -284,35 +305,24 @@ def main():
 
                 img.save(out_path, format=save_fmt, **save_params)
 
-                total_final_size += os.path.getsize(out_path)
-                success_count += 1
+                stats.add_success(orig_size, os.path.getsize(out_path))
                 render_progress(i, len(files), f_path, 100, 100, "Terminé")
 
             except Exception as e:
+                stats.add_error()
                 print(f"\n❌ Erreur sur {os.path.basename(f_path)}: {e}")
 
     except KeyboardInterrupt:
         print("\n\n⚠️ Interruption utilisateur.")
 
     # 5. Bilan
-    duration = time.time() - start_time
-    print("\n\n" + "=" * 45)
-    print("📊 BILAN FINAL")
-    print("=" * 45)
-    print(f"✅ Images traitées : {success_count}/{len(files)}")
-    print(f"⏱️ Temps écoulé    : {duration:.2f} secondes")
-    print(f"📦 Taille initiale : {format_size(total_orig_size)}")
-    print(f"📦 Taille finale   : {format_size(total_final_size)}")
-
-    diff = total_final_size - total_orig_size
-    if diff < 0:
-        print(
-            f"📉 Gain d'espace   : {format_size(abs(diff))} ({abs(diff)/total_orig_size*100:.1f}%)"
-        )
-    else:
-        print(f"📈 Augmentation    : {format_size(diff)}")
-    print(f"📂 Sortie          : {output_dir}")
-    print("=" * 45)
+    print_processing_summary(
+        stats,
+        title="BILAN FINAL",
+        item_label="Images traitées",
+        output_path=output_dir,
+        width=45,
+    )
     print("🚀 SudSuite - Travail terminé !")
 
 

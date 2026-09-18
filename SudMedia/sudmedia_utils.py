@@ -10,8 +10,10 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 import warnings
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -57,6 +59,74 @@ IGNORED_DIRECTORY_NAMES = frozenset(
         "venv",
     }
 )
+
+
+@dataclass(frozen=True)
+class SizeAnalysis:
+    """Comparaison réutilisable entre une taille source et une taille finale."""
+
+    original_size: int
+    final_size: int
+
+    @property
+    def variation(self) -> int:
+        return self.final_size - self.original_size
+
+    @property
+    def saved_bytes(self) -> int:
+        return max(0, -self.variation)
+
+    @property
+    def increased_bytes(self) -> int:
+        return max(0, self.variation)
+
+    @property
+    def reduction_percent(self) -> float:
+        if self.original_size <= 0:
+            return 0.0
+        return ((self.original_size - self.final_size) / self.original_size) * 100
+
+
+@dataclass(frozen=True)
+class QualityAnalysis:
+    """Niveau de qualité normalisé et estimation lisible de son impact."""
+
+    quality: int
+    estimated_loss_percent: int
+    risk_level: str
+    description: str
+
+
+@dataclass
+class ProcessingStats:
+    """Statistiques communes aux traitements de fichiers par lot."""
+
+    total_files: int
+    success_count: int = 0
+    skipped_count: int = 0
+    error_count: int = 0
+    original_size: int = 0
+    final_size: int = 0
+    started_at: float = field(default_factory=time.perf_counter)
+
+    def add_success(self, original_size: int, final_size: int) -> None:
+        self.success_count += 1
+        self.original_size += max(0, int(original_size))
+        self.final_size += max(0, int(final_size))
+
+    def add_skipped(self) -> None:
+        self.skipped_count += 1
+
+    def add_error(self) -> None:
+        self.error_count += 1
+
+    @property
+    def elapsed(self) -> float:
+        return max(0.0, time.perf_counter() - self.started_at)
+
+    @property
+    def size_analysis(self) -> SizeAnalysis:
+        return analyze_size_change(self.original_size, self.final_size)
 
 
 def configure_console_output() -> None:
@@ -114,6 +184,173 @@ def format_size(size_in_bytes: int | float) -> str:
         value /= 1024.0
 
     raise AssertionError("Unité de taille introuvable")
+
+
+def analyze_size_change(original_size: int, final_size: int) -> SizeAnalysis:
+    """Calcule le gain, l'augmentation et le pourcentage entre deux tailles."""
+    return SizeAnalysis(
+        original_size=max(0, int(original_size)),
+        final_size=max(0, int(final_size)),
+    )
+
+
+def normalize_quality(value, default: int = 75) -> int:
+    """Convertit une qualité en entier compris entre 1 et 100."""
+    try:
+        quality = int(value)
+    except (TypeError, ValueError):
+        quality = int(default)
+    return max(1, min(100, quality))
+
+
+def analyze_quality(value, default: int = 75) -> QualityAnalysis:
+    """Classe le risque visuel estimé d'un niveau de compression avec perte."""
+    quality = normalize_quality(value, default)
+    if quality < 50:
+        risk_level = "ÉLEVÉ"
+        description = "Artefacts visibles, flou et dégradation possible des couleurs."
+    elif quality < 80:
+        risk_level = "MODÉRÉ"
+        description = "Légère perte de netteté, généralement acceptable pour le web."
+    else:
+        risk_level = "FAIBLE"
+        description = "Perte généralement peu perceptible à l'œil nu."
+
+    return QualityAnalysis(
+        quality=quality,
+        estimated_loss_percent=100 - quality,
+        risk_level=risk_level,
+        description=description,
+    )
+
+
+def get_original_image_quality(image, default: int = 100) -> int:
+    """Lit la qualité intégrée à une image Pillow lorsqu'elle est disponible."""
+    return normalize_quality(image.info.get("quality"), default)
+
+
+def image_save_options(
+    target_format: str,
+    *,
+    compression_mode: str = "standard",
+    quality=None,
+    original_quality: int | None = None,
+) -> dict:
+    """Construit les paramètres Pillow communs pour un format et un mode.
+
+    ``compression_mode`` accepte ``standard``, ``lossless`` ou ``lossy``.
+    """
+    normalized_format = target_format.upper()
+    if normalized_format == "JPG":
+        normalized_format = "JPEG"
+    if compression_mode not in {"standard", "lossless", "lossy"}:
+        raise ValueError(f"Mode de compression inconnu : {compression_mode}")
+
+    if compression_mode == "lossy":
+        normalized_quality = normalize_quality(quality, 75)
+        if normalized_format == "JPEG":
+            return {"optimize": True, "quality": normalized_quality}
+        if normalized_format == "WEBP":
+            return {"quality": normalized_quality, "method": 4}
+        if normalized_format == "PNG":
+            return {"optimize": True}
+        return {}
+
+    if compression_mode == "lossless":
+        if normalized_format == "JPEG":
+            preserved_quality = normalize_quality(original_quality, 100)
+            return {
+                "optimize": True,
+                "quality": preserved_quality,
+                "subsampling": 0,
+            }
+        if normalized_format == "WEBP":
+            return {"lossless": True, "quality": 100, "method": 6}
+        if normalized_format == "PNG":
+            return {"optimize": True}
+        return {}
+
+    if normalized_format == "JPEG":
+        return {
+            "quality": normalize_quality(quality, 95),
+            "subsampling": 0,
+        }
+    if normalized_format == "WEBP":
+        return {"lossless": True, "quality": 100}
+    if normalized_format == "PNG":
+        return {"optimize": True}
+    return {}
+
+
+def prepare_image_for_quality(
+    image,
+    target_format: str,
+    *,
+    compression_mode: str = "standard",
+    quality=None,
+):
+    """Applique les transformations de pixels nécessaires avant sauvegarde."""
+    image = prepare_image_for_format(image, target_format)
+    if compression_mode == "lossy" and target_format.upper() == "PNG":
+        from PIL import Image
+
+        normalized_quality = normalize_quality(quality, 75)
+        colors = max(2, int((normalized_quality / 100) * 256))
+        return image.convert("P", palette=Image.Palette.ADAPTIVE, colors=colors)
+    return image
+
+
+def print_quality_analysis(analysis: QualityAnalysis) -> None:
+    """Affiche une analyse de qualité homogène dans les outils SudMedia."""
+    print(
+        f"[Risque {analysis.risk_level}] Qualité {analysis.quality}/100 "
+        f"(perte estimée : {analysis.estimated_loss_percent} %)."
+    )
+    print(f"   {analysis.description}")
+
+
+def print_processing_summary(
+    stats: ProcessingStats,
+    *,
+    title: str = "BILAN DE L'OPÉRATION",
+    item_label: str = "Fichiers traités",
+    original_label: str = "Taille initiale",
+    final_label: str = "Taille finale",
+    output_path: str | os.PathLike[str] | None = None,
+    width: int = 45,
+    show_duration: bool = True,
+) -> None:
+    """Affiche un bilan commun avec compteurs, tailles et variation."""
+    analysis = stats.size_analysis
+    print("\n" + "=" * width)
+    print(f"📊 {title}")
+    print("=" * width)
+    print(f"✅ {item_label} : {stats.success_count}/{stats.total_files}")
+    if stats.skipped_count:
+        print(f"⏩ Fichiers ignorés : {stats.skipped_count}")
+    if stats.error_count:
+        print(f"⚠️  Erreurs : {stats.error_count}")
+    if show_duration:
+        print(f"⏱️  Temps écoulé : {stats.elapsed:.2f} secondes")
+    print(f"📦 {original_label} : {format_size(stats.original_size)}")
+    print(f"📦 {final_label} : {format_size(stats.final_size)}")
+
+    if analysis.variation < 0:
+        print(
+            f"📉 Gain d'espace : {format_size(analysis.saved_bytes)} "
+            f"({analysis.reduction_percent:.1f} %)"
+        )
+    elif analysis.variation > 0:
+        print(
+            f"📈 Augmentation : {format_size(analysis.increased_bytes)} "
+            f"({abs(analysis.reduction_percent):.1f} %)"
+        )
+    else:
+        print("➖ Variation : aucune")
+
+    if output_path is not None:
+        print(f"📂 Sortie : {output_path}")
+    print("=" * width)
 
 
 def walk_filtered(
@@ -356,5 +593,9 @@ def prepare_image_for_format(image, target_format: str):
 
     if normalized_format != "GIF" and image.mode == "P":
         return image.convert("RGBA" if "transparency" in image.info else "RGB")
+
+    if normalized_format == "WEBP" and image.mode not in {"RGB", "RGBA"}:
+        target_mode = "RGBA" if "A" in image.getbands() else "RGB"
+        return image.convert(target_mode)
 
     return image

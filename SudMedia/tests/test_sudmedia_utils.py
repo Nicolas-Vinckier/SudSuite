@@ -3,6 +3,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 try:
     from ._path_setup import add_project_root
@@ -17,11 +18,18 @@ except ImportError:
     Image = None
 
 from SudMedia.sudmedia_utils import (
+    ProcessingStats,
+    analyze_quality,
+    analyze_size_change,
     clean_input_path,
     collect_target_files,
     format_size,
+    image_save_options,
+    normalize_quality,
     paths_overlap,
     prepare_image_for_format,
+    prepare_image_for_quality,
+    print_processing_summary,
     render_progress,
     reserve_output_path,
     resize_image,
@@ -102,6 +110,37 @@ class DisplayUtilitiesTests(unittest.TestCase):
             render_progress(0, 0, "image.png", total_steps=0)
         self.assertIn("image.png", output.getvalue())
 
+    def test_size_analysis_reports_gain_and_increase(self):
+        gain = analyze_size_change(1000, 750)
+        increase = analyze_size_change(1000, 1250)
+
+        self.assertEqual(gain.saved_bytes, 250)
+        self.assertEqual(gain.reduction_percent, 25.0)
+        self.assertEqual(increase.increased_bytes, 250)
+        self.assertEqual(increase.reduction_percent, -25.0)
+
+    def test_quality_is_normalized_and_classified(self):
+        self.assertEqual(normalize_quality("150"), 100)
+        self.assertEqual(normalize_quality("invalide", default=70), 70)
+        self.assertEqual(analyze_quality(40).risk_level, "ÉLEVÉ")
+        self.assertEqual(analyze_quality(70).risk_level, "MODÉRÉ")
+        self.assertEqual(analyze_quality(90).risk_level, "FAIBLE")
+
+    def test_processing_summary_uses_shared_statistics(self):
+        stats = ProcessingStats(total_files=3)
+        stats.add_success(1000, 600)
+        stats.add_skipped()
+        stats.add_error()
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            print_processing_summary(stats, show_duration=False)
+
+        rendered = output.getvalue()
+        self.assertIn("1/3", rendered)
+        self.assertIn("Fichiers ignorés : 1", rendered)
+        self.assertIn("Gain d'espace", rendered)
+
 
 @unittest.skipUnless(Image, "Pillow n'est pas installé")
 class ImageUtilitiesTests(unittest.TestCase):
@@ -119,6 +158,79 @@ class ImageUtilitiesTests(unittest.TestCase):
 
         self.assertEqual(jpeg_ready.mode, "RGB")
         self.assertEqual(jpeg_ready.getpixel((0, 0)), (255, 255, 255))
+
+    def test_save_options_are_shared_by_format_and_mode(self):
+        self.assertEqual(
+            image_save_options("WEBP", compression_mode="lossless")["lossless"],
+            True,
+        )
+        self.assertEqual(
+            image_save_options("JPEG", compression_mode="lossy", quality=70)[
+                "quality"
+            ],
+            70,
+        )
+
+    def test_lossy_png_uses_a_reduced_palette(self):
+        source = Image.new("RGB", (10, 10), "red")
+        prepared = prepare_image_for_quality(
+            source,
+            "PNG",
+            compression_mode="lossy",
+            quality=50,
+        )
+        self.assertEqual(prepared.mode, "P")
+
+    def test_image_compressor_reuses_shared_quality_rules(self):
+        from SudMedia.image_compressor import compress_image
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source_path = Path(temporary_directory) / "source.bmp"
+            Image.effect_noise((128, 128), 100).save(source_path, "BMP")
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                settings = compress_image(
+                    source_path,
+                    settings={
+                        "choix": "2",
+                        "quality": 30,
+                        "use_webp": True,
+                        "skip_if_larger": False,
+                    },
+                )
+
+            output_path = source_path.with_name("source_min.webp")
+            self.assertTrue(output_path.exists())
+            self.assertEqual(settings["quality"], 30)
+            with Image.open(output_path) as result:
+                self.assertEqual(result.format, "WEBP")
+
+    def test_image_master_reuses_shared_quality_and_summary(self):
+        from SudMedia import image_master
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source_path = Path(temporary_directory) / "source.png"
+            Image.effect_noise((64, 64), 100).convert("RGB").save(
+                source_path, "PNG"
+            )
+
+            with (
+                mock.patch.object(
+                    image_master.sys,
+                    "argv",
+                    ["image_master.py", str(source_path)],
+                ),
+                mock.patch(
+                    "builtins.input",
+                    side_effect=["n", "n", "o", "2", "70"],
+                ),
+                contextlib.redirect_stdout(io.StringIO()) as output,
+            ):
+                image_master.main()
+
+            result_path = source_path.with_name("source_min.png")
+            self.assertTrue(result_path.exists())
+            self.assertIn("BILAN FINAL", output.getvalue())
 
 
 if __name__ == "__main__":

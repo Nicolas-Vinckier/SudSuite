@@ -157,6 +157,18 @@ le dossier `SudMedia` :
 py .\tests\test_tools.py
 ```
 
+### Fonctions partagées de SudMedia
+
+Les règles communes sont regroupées dans `SudMedia/sudmedia_utils.py` :
+
+- `analyze_size_change()` calcule les gains et augmentations de taille ;
+- `analyze_quality()` normalise la qualité et estime son niveau de risque ;
+- `image_save_options()` fournit les paramètres Pillow cohérents par format ;
+- `ProcessingStats` et `print_processing_summary()` produisent les bilans de lot ;
+- `prepare_image_for_quality()` applique les transformations nécessaires avant sauvegarde.
+
+Les scripts gardent uniquement leurs menus et leur workflow métier.
+
 ---
 
 ## 📖 Utilisation

@@ -4,19 +4,31 @@ import sys
 
 try:
     from .sudmedia_utils import (
+        analyze_quality,
+        analyze_size_change,
         collect_target_files,
         configure_console_output,
         configure_pillow,
         format_size,
+        get_original_image_quality,
+        image_save_options,
         prepare_image_for_format,
+        prepare_image_for_quality,
+        print_quality_analysis,
     )
 except ImportError:
     from sudmedia_utils import (
+        analyze_quality,
+        analyze_size_change,
         collect_target_files,
         configure_console_output,
         configure_pillow,
         format_size,
+        get_original_image_quality,
+        image_save_options,
         prepare_image_for_format,
+        prepare_image_for_quality,
+        print_quality_analysis,
     )
 
 configure_console_output()
@@ -30,9 +42,7 @@ except ImportError:
     print("   pip install Pillow")
     sys.exit(1)
 
-def get_original_quality(img):
-    """Tente de récupérer la qualité d'origine d'un JPEG."""
-    return img.info.get("quality", 100)
+
 def compress_image(input_path, settings=None):
     quality = None
     use_webp = False
@@ -45,13 +55,13 @@ def compress_image(input_path, settings=None):
     print(f"[Poids] Taille originale  : {format_size(original_size)}")
 
     try:
-        img = Image.open(input_path)
+        with Image.open(input_path) as source_image:
+            fmt = source_image.format.lower() if source_image.format else "inconnu"
+            original_quality = get_original_image_quality(source_image)
+            img = source_image.copy()
     except Exception as e:
         print(f"[Erreur] lors de l'ouverture de l'image : {e}")
         return None
-
-    # Identifier le format d'origine
-    fmt = img.format.lower() if img.format else "inconnu"
 
     if fmt not in ["png", "jpeg", "jpg", "webp", "mpo", "gif"]:
         print(
@@ -86,24 +96,12 @@ def compress_image(input_path, settings=None):
         if not settings:
             print("\n[Traitement] Compression SANS PERTE en cours...")
         
-        if save_format == "JPEG":
-            # Meilleure conservation possible pour le JPEG via PIL
-            q = get_original_quality(img)
-            kwargs = (
-                {"quality": "keep"} if q != 100 else {"quality": 100, "subsampling": 0}
-            )
-            try:
-                img.save(buffer, format="JPEG", optimize=True, **kwargs)
-            except:
-                img.save(
-                    buffer, format="JPEG", optimize=True, quality=100, subsampling=0
-                )
-        elif save_format == "PNG":
-            # L'optimisation PNG est nativement lossless.
-            img.save(buffer, format="PNG", optimize=True)
-        elif save_format == "WEBP":
-            # Vrai lossless pour WebP
-            img.save(buffer, format="WEBP", lossless=True, quality=100, method=6)
+        save_params = image_save_options(
+            save_format,
+            compression_mode="lossless",
+            original_quality=original_quality,
+        )
+        img.save(buffer, format=save_format, **save_params)
 
         new_size = buffer.tell()
         if not settings:
@@ -112,15 +110,11 @@ def compress_image(input_path, settings=None):
     elif choix == "2":
         if not settings:
             print("\n--- Compression AVEC PERTE ---")
-            try:
-                quality = int(
-                    input("Niveau de qualite souhaite (1-100, ex: 70) : ").strip()
-                )
-            except ValueError:
-                print("Entrée invalide. Utilisation de la qualité par défaut (70).")
-                quality = 70
-            
-            quality = max(1, min(100, quality))
+            quality_analysis = analyze_quality(
+                input("Niveau de qualite souhaite (1-100, ex: 70) : ").strip(),
+                default=70,
+            )
+            quality = quality_analysis.quality
 
             # Proposition de conversion WebP : excellent compromis poids/qualité
             format_choisi = (
@@ -132,61 +126,52 @@ def compress_image(input_path, settings=None):
             )
             use_webp = format_choisi != "n"
         else:
-            quality = settings.get("quality", 70)
+            quality_analysis = analyze_quality(settings.get("quality"), default=70)
+            quality = quality_analysis.quality
             use_webp = settings.get("use_webp", True)
 
         if use_webp:
             save_format = "WEBP"
 
-        if save_format == "WEBP" and img.mode not in ("RGB", "RGBA"):
-            img = img.convert("RGBA" if "A" in img.mode else "RGB")
+        img = prepare_image_for_quality(
+            img,
+            save_format,
+            compression_mode="lossy",
+            quality=quality,
+        )
 
         if not settings:
             print("\n[Analyse] Calcul des risques et BENEFICES en cours...")
 
-        if save_format == "JPEG":
-            img.save(buffer, format="JPEG", optimize=True, quality=quality)
-        elif save_format == "WEBP":
-            img.save(buffer, format="WEBP", quality=quality, method=4)
-        elif save_format == "PNG":
-            # Simulation de perte sur PNG : réduction drastique de la palette de couleurs
-            colors = max(2, int((quality / 100) * 256))
-            lossy_img = img.convert("P", palette=Image.ADAPTIVE, colors=colors)
-            lossy_img.save(buffer, format="PNG", optimize=True)
+        save_params = image_save_options(
+            save_format,
+            compression_mode="lossy",
+            quality=quality,
+        )
+        img.save(buffer, format=save_format, **save_params)
 
         new_size = buffer.tell()
 
         if not settings:
-            loss_percentage = 100 - quality
-            size_reduction = (
-                (original_size - new_size) / original_size * 100 if original_size > 0 else 0
-            )
+            size_analysis = analyze_size_change(original_size, new_size)
 
             print("\n" + "= " * 15)
             print("ANALYSE DES RISQUES ET BENEFICES")
             print("= " * 15)
 
-            print(f"BENEFICE : Reduction du poids de {size_reduction:.2f}%")
+            print(
+                "BENEFICE : Reduction du poids de "
+                f"{size_analysis.reduction_percent:.2f}%"
+            )
             print(f"   (De {format_size(original_size)} à {format_size(new_size)})")
 
-            if size_reduction < 0:
+            if size_analysis.variation > 0:
                 print(
                     "\n[Attention] La compression a AUGMENTE la taille de l'image (l'image d'origine est deja trop compressee)."
                 )
 
-            print(f"\n[Risque] Degradaion de la qualite estimee a {loss_percentage}%.")
-            if quality < 50:
-                print(
-                    "   -> RISQUE ELEVE  : Artefacts tres visibles, image potentiellement floue, couleurs baveuses."
-                )
-            elif quality < 80:
-                print(
-                    "   -> RISQUE MODERE : Legere perte de nettete ou petits artefacts (acceptable pour le web)."
-                )
-            else:
-                print(
-                    "   -> RISQUE FAIBLE : Perte de qualite quasi imperceptible a l'oeil nu."
-                )
+            print()
+            print_quality_analysis(quality_analysis)
 
             confirmer = (
                 input("\nProceder a la sauvegarde avec cette qualite ? (o/n) : ")
@@ -231,14 +216,17 @@ def compress_image(input_path, settings=None):
     with open(output_path, "wb") as f:
         f.write(buffer.getvalue())
 
+    size_analysis = analyze_size_change(original_size, new_size)
     print(f"✓ Succès ! Fichier sauvegardé : {os.path.basename(output_path)}")
     if not settings:
-        print(
-            f"Gain d'espace total : {((original_size - new_size) / original_size) * 100:.2f}%"
-        )
+        print(f"Gain d'espace total : {size_analysis.reduction_percent:.2f}%")
         print(f"Nouvelle taille : {format_size(new_size)}")
     
-    return {"choix": choix, "quality": quality if choix == "2" else None, "use_webp": (save_format == "WEBP") if choix == "2" else None}
+    return {
+        "choix": choix,
+        "quality": quality if choix == "2" else None,
+        "use_webp": (save_format == "WEBP") if choix == "2" else None,
+    }
 
 
 def print_banner():
@@ -283,8 +271,15 @@ def main():
     # Si on a plusieurs images, on propose d'appliquer les mêmes réglages
     batch_settings = None
     if len(target_files) > 1:
-        rep = input(f"\n📦 {len(target_files)} images détectées. Voulez-vous appliquer les mêmes réglages à toutes ? (o/n) : ").strip().lower()
-        if rep == 'o':
+        rep = (
+            input(
+                f"\n📦 {len(target_files)} images détectées. "
+                "Voulez-vous appliquer les mêmes réglages à toutes ? (o/n) : "
+            )
+            .strip()
+            .lower()
+        )
+        if rep == "o":
             # On exécute la première image pour récupérer les réglages
             print("\n--- Configuration des réglages groupés ---")
             res = compress_image(target_files[0])

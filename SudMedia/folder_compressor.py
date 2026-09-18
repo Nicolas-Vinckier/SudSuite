@@ -19,9 +19,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from .sudmedia_utils import clean_input_path, configure_console_output, format_size
+    from .sudmedia_utils import (
+        analyze_size_change,
+        clean_input_path,
+        configure_console_output,
+        format_size,
+    )
 except ImportError:
-    from sudmedia_utils import clean_input_path, configure_console_output, format_size
+    from sudmedia_utils import (
+        analyze_size_change,
+        clean_input_path,
+        configure_console_output,
+        format_size,
+    )
 
 # ============================================================
 # SudMedia Folder Compressor - version optimisee
@@ -1710,7 +1720,7 @@ def compress_folder(cli_args=None):
 
         total_elapsed = time.perf_counter() - global_start
         final_size = os.path.getsize(output_path)
-        reduction = (1 - (final_size / total_size)) * 100 if total_size > 0 else 0.0
+        size_analysis = analyze_size_change(total_size, final_size)
         throughput = total_size / compression_elapsed if compression_elapsed > 0 else 0
 
         print("\n" + "=" * 60)
@@ -1722,7 +1732,13 @@ def compress_folder(cli_args=None):
         print(f"Debit source        : {format_size(throughput)}/s")
         print(f"Taille source       : {format_size(total_size)}")
         print(f"Taille finale       : {format_size(final_size)}")
-        print(f"Gain d'espace       : {reduction:.2f}%")
+        if size_analysis.variation <= 0:
+            print(f"Gain d'espace       : {size_analysis.reduction_percent:.2f}%")
+        else:
+            print(
+                "Augmentation         : "
+                f"{abs(size_analysis.reduction_percent):.2f}%"
+            )
         print(f"Fichiers            : {len(entries)}")
         print(f"Emplacement         : {output_path}")
         print("=" * 60)
