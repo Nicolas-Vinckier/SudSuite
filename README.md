@@ -199,25 +199,21 @@ le dossier `SudMedia` :
 py .\tests\test_tools.py
 ```
 
-### Fonctions partagées de SudMedia
+### Fonctions partagées et architecture modulaire (`SudMedia/utils/`)
 
-Les règles communes sont regroupées dans `SudMedia/sudmedia_utils.py` :
+Les utilitaires et moteurs de SudMedia sont désormais centralisés et organisés par **thèmes de fonctionnalités généralistes** dans le package `SudMedia/utils/` :
 
-- `analyze_size_change()` calcule les gains et augmentations de taille ;
-- `analyze_quality()` normalise la qualité et estime son niveau de risque ;
-- `image_save_options()` fournit les paramètres Pillow cohérents par format ;
-- `ProcessingStats` et `print_processing_summary()` produisent les bilans de lot ;
-- `Progress` fournit la même barre (fichiers, octets, vitesse, ETA et mode
-  indéterminé) à tous les traitements, y compris l'archiveur ;
-- `prepare_image_for_quality()` applique les transformations nécessaires avant sauvegarde.
+- **`SudMedia/utils/filesystem/`** : Parcours filtré (`walk_filtered`, `scan_folder`), collecte de fichiers (`collect_files`, `collect_target_files`), gestion sécurisée des chemins (`clean_input_path`, `unique_path`, `safe_member_path`), écritures atomiques (`atomic_write_text`, `atomic_write_json`) et mise en quarantaine (`quarantine_files`).
+- **`SudMedia/utils/hashing/`** : Empreintes binaires (`hash_file`, `content_hash`), empreintes perceptuelles pour images (`difference_hash`, `hamming_distance`) et indexation métrique par BK-Tree (`HammingIndex`).
+- **`SudMedia/utils/image/`** : Constantes multimédias, configuration Pillow, redimensionnement géométrique (`resize_image`) et options de sauvegarde / conversion.
+- **`SudMedia/utils/progress/`** : Barre de progression universelle (`Progress`), proxy de lecture (`ProgressReader`) et formatage temporel compact (`format_duration`, `format_size_short`).
+- **`SudMedia/utils/metrics/`** : Analyse des variations de taille (`analyze_size_change`, `format_size`), estimation de risque qualité (`analyze_quality`) et bilans d'opérations (`ProcessingStats`, `print_processing_summary`).
+- **`SudMedia/utils/console/`** : Configuration du terminal (`configure_console_output` pour UTF-8 et VT100).
+- **`SudMedia/utils/archive/`** : Moteurs de compression (`compress_zip_*`, `compress_tar_xz_*`), d'extraction et de vérification d'intégrité.
+- **`SudMedia/utils/duplicate/`** : Moteur de détection de doublons exacts et visuels (`scan_duplicates`, `quarantine_duplicates`).
+- **`SudMedia/utils/text/`** : Moteur OCR et extraction textuelle (`extract_document`, `process_documents`, `TesseractBackend`).
 
-Les scripts gardent uniquement leurs menus et leur workflow métier.
-
-Les nouveaux outils partagent également `SudCore/files.py` pour le parcours
-filtré, le calcul d'empreintes, la réservation de noms et les écritures JSON
-atomiques. Les moteurs Duplicate, Integrity et OCR restent ainsi indépendants de
-leurs interfaces en ligne de commande et peuvent être réutilisés par d'autres
-scripts.
+Une façade de compatibilité `SudMedia/sudmedia_utils.py` ainsi que des shims réexportent l'ensemble de ces symboles pour garantir la rétrocompatibilité totale avec les scripts existants.
 
 ---
 

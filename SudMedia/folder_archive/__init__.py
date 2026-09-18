@@ -1,22 +1,60 @@
-"""API publique des composants d'archive reutilisables de SudMedia."""
+"""Façade de compatibilité pour SudMedia.folder_archive.
 
-from .compression import (
-    compress_tar_xz_python,
-    compress_zip_python,
-    execute_compression,
-    select_backend,
-)
-from .extraction import execute_extraction, extract_tar_xz_python, extract_zip_python
-from .models import CompressionBackendError, ExtractionBackendError, FileEntry, Toolchain
-from .paths import (
-    archive_base_name,
-    detect_archive_format,
-    safe_member_path,
-    scan_folder,
-)
-from .progress import Progress, ProgressReader
-from .toolchain import describe_backend, detect_toolchain, parse_threads
-from .verification import verify_archive
+La logique réside désormais dans ``SudMedia.utils.archive`` et ``SudMedia.utils.filesystem``.
+"""
+
+from __future__ import annotations
+
+try:
+    from ..utils.archive import (
+        CompressionBackendError,
+        ExtractionBackendError,
+        FileEntry,
+        Toolchain,
+        compress_tar_xz_python,
+        compress_zip_python,
+        describe_backend,
+        detect_toolchain,
+        execute_compression,
+        execute_extraction,
+        extract_tar_xz_python,
+        extract_zip_python,
+        parse_threads,
+        select_backend,
+        verify_archive,
+    )
+    from ..utils.filesystem.paths import (
+        archive_base_name,
+        detect_archive_format,
+        safe_member_path,
+    )
+    from ..utils.filesystem.scanner import scan_folder
+    from ..utils.progress import Progress, ProgressReader
+except ImportError:
+    from utils.archive import (
+        CompressionBackendError,
+        ExtractionBackendError,
+        FileEntry,
+        Toolchain,
+        compress_tar_xz_python,
+        compress_zip_python,
+        describe_backend,
+        detect_toolchain,
+        execute_compression,
+        execute_extraction,
+        extract_tar_xz_python,
+        extract_zip_python,
+        parse_threads,
+        select_backend,
+        verify_archive,
+    )
+    from utils.filesystem.paths import (
+        archive_base_name,
+        detect_archive_format,
+        safe_member_path,
+    )
+    from utils.filesystem.scanner import scan_folder
+    from utils.progress import Progress, ProgressReader
 
 __all__ = [
     "CompressionBackendError",

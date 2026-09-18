@@ -1,24 +1,4 @@
-"""Modeles et erreurs du gestionnaire d'archives."""
+"""Façade de compatibilité."""
+from SudMedia.utils.archive.models import CompressionBackendError, ExtractionBackendError, FileEntry, Toolchain
 
-from dataclasses import dataclass
-
-
-@dataclass
-class FileEntry:
-    path: str
-    arcname: str
-    size: int
-
-
-@dataclass
-class Toolchain:
-    sevenzip: str = None
-    xz: str = None
-
-
-class CompressionBackendError(RuntimeError):
-    pass
-
-
-class ExtractionBackendError(RuntimeError):
-    pass
+__all__ = ["CompressionBackendError", "ExtractionBackendError", "FileEntry", "Toolchain"]

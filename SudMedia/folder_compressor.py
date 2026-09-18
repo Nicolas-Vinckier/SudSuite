@@ -12,65 +12,74 @@ import sys
 import time
 from pathlib import Path
 
-try:
-    from .folder_archive.compression import (
-        add_entries_to_tar, compress_tar_xz_external_7zip,
-        compress_tar_xz_external_xz, compress_tar_xz_python,
-        compress_zip_7zip, compress_zip_python, copy_with_progress,
-        execute_compression, select_backend, stream_tar_to_process,
-    )
-    from .folder_archive.extraction import (
-        execute_extraction, extract_tar_members, extract_tar_xz_7zip,
-        extract_tar_xz_external_xz, extract_tar_xz_python,
-        extract_zip_7zip, extract_zip_python, inspect_zip_for_extraction,
-    )
-    from .folder_archive.models import (
-        CompressionBackendError, ExtractionBackendError, FileEntry, Toolchain,
-    )
-    from .folder_archive.paths import (
-        archive_base_name, detect_archive_format, make_staging_folder,
-        remove_output_from_entries, resolve_archive_output_path,
-        resolve_extraction_paths, safe_member_path, scan_folder,
-    )
-    from .folder_archive.progress import Progress, ProgressReader, format_duration, format_size_short
-    from .folder_archive.toolchain import (
-        build_7zip_listfile, decode_external_output, describe_backend,
-        detect_sevenzip, detect_toolchain, detect_xz, find_executable,
-        parse_threads, run_7zip_with_progress, run_command, safe_unlink,
-        thread_switch_7zip, thread_switch_xz,
-    )
-    from .folder_archive.verification import (
-        full_verify_xz, full_verify_zip, quick_verify_xz,
-        quick_verify_zip, verify_archive,
-    )
-    from .sudmedia_utils import analyze_size_change, clean_input_path, configure_console_output, format_size
-except ImportError:
-    from folder_archive.compression import (
-        add_entries_to_tar, compress_tar_xz_external_7zip,
-        compress_tar_xz_external_xz, compress_tar_xz_python,
-        compress_zip_7zip, compress_zip_python, copy_with_progress,
-        execute_compression, select_backend, stream_tar_to_process,
-    )
-    from folder_archive.extraction import (
-        execute_extraction, extract_tar_members, extract_tar_xz_7zip,
-        extract_tar_xz_external_xz, extract_tar_xz_python,
-        extract_zip_7zip, extract_zip_python, inspect_zip_for_extraction,
-    )
-    from folder_archive.models import CompressionBackendError, ExtractionBackendError, FileEntry, Toolchain
-    from folder_archive.paths import (
-        archive_base_name, detect_archive_format, make_staging_folder,
-        remove_output_from_entries, resolve_archive_output_path,
-        resolve_extraction_paths, safe_member_path, scan_folder,
-    )
-    from folder_archive.progress import Progress, ProgressReader, format_duration, format_size_short
-    from folder_archive.toolchain import (
-        build_7zip_listfile, decode_external_output, describe_backend,
-        detect_sevenzip, detect_toolchain, detect_xz, find_executable,
-        parse_threads, run_7zip_with_progress, run_command, safe_unlink,
-        thread_switch_7zip, thread_switch_xz,
-    )
-    from folder_archive.verification import full_verify_xz, full_verify_zip, quick_verify_xz, quick_verify_zip, verify_archive
-    from sudmedia_utils import analyze_size_change, clean_input_path, configure_console_output, format_size
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils.archive import (
+    CompressionBackendError,
+    ExtractionBackendError,
+    FileEntry,
+    Toolchain,
+    compress_tar_xz_external_7zip,
+    compress_tar_xz_external_xz,
+    compress_tar_xz_python,
+    compress_zip_7zip,
+    compress_zip_python,
+    describe_backend,
+    detect_sevenzip,
+    detect_toolchain,
+    detect_xz,
+    execute_compression,
+    execute_extraction,
+    extract_tar_members,
+    extract_tar_xz_7zip,
+    extract_tar_xz_external_xz,
+    extract_tar_xz_python,
+    extract_zip_7zip,
+    extract_zip_python,
+    full_verify_xz,
+    full_verify_zip,
+    parse_threads,
+    quick_verify_xz,
+    quick_verify_zip,
+    select_backend,
+    verify_archive,
+)
+from SudMedia.utils.archive.compression import (
+    add_entries_to_tar,
+    copy_with_progress,
+    stream_tar_to_process,
+)
+from SudMedia.utils.archive.extraction import inspect_zip_for_extraction
+from SudMedia.utils.archive.toolchain import (
+    build_7zip_listfile,
+    decode_external_output,
+    find_executable,
+    run_7zip_with_progress,
+    run_command,
+    safe_unlink,
+    thread_switch_7zip,
+    thread_switch_xz,
+)
+from SudMedia.utils.console import configure_console_output
+from SudMedia.utils.filesystem import (
+    archive_base_name,
+    clean_input_path,
+    detect_archive_format,
+    make_staging_folder,
+    remove_output_from_entries,
+    resolve_archive_output_path,
+    resolve_extraction_paths,
+    safe_member_path,
+    scan_folder,
+)
+from SudMedia.utils.metrics import analyze_size_change, format_size
+from SudMedia.utils.progress import (
+    Progress,
+    ProgressReader,
+    format_duration,
+    format_size_short,
+)
 
 
 def print_diagnostics(tools, requested_threads, effective_threads):
