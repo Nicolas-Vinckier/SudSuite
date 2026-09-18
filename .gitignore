@@ -20,3 +20,4 @@
 **/configs/
 /SudDuplicate_*
 /SudOCR_*
+*.json
