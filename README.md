@@ -43,7 +43,7 @@ Un outil de compression de dossiers intelligent pour archiver vos projets tout e
 - **Estimation & Vérification** : Calcule le gain d'espace et vérifie l'intégrité de l'archive après création.
 
 Le fichier `folder_compressor.py` sert uniquement de façade et d'interface en ligne
-de commande. Son moteur est découpé dans `SudMedia/folder_archive/` : chemins et
+de commande. Son moteur est découpé dans `SudMedia/utils/folder_archive/` : chemins et
 sécurité, progression, détection des outils, compression, extraction et
 vérification. Les anciens imports depuis `SudMedia.folder_compressor` restent
 compatibles.
@@ -209,9 +209,9 @@ Les utilitaires et moteurs de SudMedia sont désormais centralisés et organisé
 - **`SudMedia/utils/progress/`** : Barre de progression universelle (`Progress`), proxy de lecture (`ProgressReader`) et formatage temporel compact (`format_duration`, `format_size_short`).
 - **`SudMedia/utils/metrics/`** : Analyse des variations de taille (`analyze_size_change`, `format_size`), estimation de risque qualité (`analyze_quality`) et bilans d'opérations (`ProcessingStats`, `print_processing_summary`).
 - **`SudMedia/utils/console/`** : Configuration du terminal (`configure_console_output` pour UTF-8 et VT100).
-- **`SudMedia/utils/archive/`** : Moteurs de compression (`compress_zip_*`, `compress_tar_xz_*`), d'extraction et de vérification d'intégrité.
+- **`SudMedia/utils/folder_archive/`** : Moteurs de compression (`compress_zip_*`, `compress_tar_xz_*`), d'extraction et de vérification d'intégrité.
 - **`SudMedia/utils/duplicate/`** : Moteur de détection de doublons exacts et visuels (`scan_duplicates`, `quarantine_duplicates`).
-- **`SudMedia/utils/text/`** : Moteur OCR et extraction textuelle (`extract_document`, `process_documents`, `TesseractBackend`).
+- **`SudMedia/utils/ocr/`** : Moteur OCR et extraction textuelle (`extract_document`, `process_documents`, `TesseractBackend`).
 
 Une façade de compatibilité `SudMedia/sudmedia_utils.py` ainsi que des shims réexportent l'ensemble de ces symboles pour garantir la rétrocompatibilité totale avec les scripts existants.
 

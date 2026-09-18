@@ -52,15 +52,6 @@ def print_banner():
     print(banner)
 
 
-def get_target_files(paths):
-    """Collecte tous les fichiers images valides à partir des chemins fournis."""
-    return collect_target_files(
-        paths,
-        VALID_EXTENSIONS,
-        item_label="une image supportée",
-    )
-
-
 def process_file(
     file_path,
     target_w,
@@ -128,7 +119,11 @@ def main():
         print("❌ Aucun chemin spécifié.")
         sys.exit(0)
 
-    files = get_target_files(paths)
+    files = collect_target_files(
+        paths,
+        VALID_EXTENSIONS,
+        item_label="une image supportée",
+    )
     if not files:
         print("❌ Aucun fichier image valide trouvé.")
         sys.exit(0)

@@ -127,7 +127,7 @@ class DisplayUtilitiesTests(unittest.TestCase):
         self.assertEqual(indeterminate.completed_files, 1)
 
     def test_archive_progress_reuses_the_shared_implementation(self):
-        from SudMedia.folder_archive.progress import Progress as ArchiveProgress
+        from SudMedia.utils.progress import Progress as ArchiveProgress
 
         self.assertIs(ArchiveProgress, Progress)
 

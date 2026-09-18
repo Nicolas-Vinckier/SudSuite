@@ -21,8 +21,8 @@ except ImportError:
     pymupdf = None
 
 from SudCore.files import collect_files, hash_file
-from SudMedia.duplicate import quarantine_duplicates, scan_duplicates
-from SudMedia.ocr import process_documents
+from SudMedia.utils.duplicate import quarantine_duplicates, scan_duplicates
+from SudMedia.utils.ocr import process_documents
 from SudSecurity.integrity import create_manifest, verify_manifest
 
 

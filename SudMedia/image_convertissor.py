@@ -56,15 +56,6 @@ def print_banner():
     print(banner)
 
 
-def get_target_files(paths):
-    """Collecte tous les fichiers images valides à partir des chemins fournis."""
-    return collect_target_files(
-        paths,
-        VALID_EXTENSIONS,
-        item_label="une image supportée",
-    )
-
-
 def convert_image(
     input_path,
     target_format,
@@ -129,7 +120,11 @@ def main():
 
     # 1. Collecte des fichiers
     print("🔍 Analyse des fichiers...")
-    files = get_target_files(sys.argv[1:])
+    files = collect_target_files(
+        sys.argv[1:],
+        VALID_EXTENSIONS,
+        item_label="une image supportée",
+    )
 
     if not files:
         print("❌ Aucun fichier image trouvé.")

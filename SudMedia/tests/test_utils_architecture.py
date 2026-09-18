@@ -20,7 +20,7 @@ from SudMedia.utils import (
     SizeAnalysis,
     analyze_quality,
     analyze_size_change,
-    archive,
+    folder_archive,
     atomic_write_json,
     atomic_write_text,
     clean_input_path,
@@ -50,7 +50,7 @@ from SudMedia.utils import (
     resize_image,
     scan_duplicates,
     scan_folder,
-    text,
+    ocr,
     unique_available_path,
     unique_path,
     walk_filtered,
@@ -62,7 +62,7 @@ from SudMedia.utils.hashing import hash_file as hash_f
 from SudMedia.utils.image import resize_image as img_resize
 from SudMedia.utils.metrics import format_size as met_format_size
 from SudMedia.utils.progress import Progress as Prog
-from SudMedia.utils.text import OCRDocument, OCRPage
+from SudMedia.utils.ocr import OCRDocument, OCRPage
 
 
 class UtilsArchitectureTests(unittest.TestCase):

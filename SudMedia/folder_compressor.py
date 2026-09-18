@@ -1,6 +1,6 @@
 """CLI du compresseur de dossiers SudMedia.
 
-La logique reusable est repartie dans ``SudMedia.folder_archive``. Les imports
+La logique réutilisable est répartie dans ``SudMedia.utils.folder_archive``. Les imports
 restent exposes ici pour conserver la compatibilite avec l'ancien module.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from SudMedia.utils.archive import (
+from SudMedia.utils.folder_archive import (
     CompressionBackendError,
     ExtractionBackendError,
     FileEntry,
@@ -45,13 +45,13 @@ from SudMedia.utils.archive import (
     select_backend,
     verify_archive,
 )
-from SudMedia.utils.archive.compression import (
+from SudMedia.utils.folder_archive.compression import (
     add_entries_to_tar,
     copy_with_progress,
     stream_tar_to_process,
 )
-from SudMedia.utils.archive.extraction import inspect_zip_for_extraction
-from SudMedia.utils.archive.toolchain import (
+from SudMedia.utils.folder_archive.extraction import inspect_zip_for_extraction
+from SudMedia.utils.folder_archive.toolchain import (
     build_7zip_listfile,
     decode_external_output,
     find_executable,

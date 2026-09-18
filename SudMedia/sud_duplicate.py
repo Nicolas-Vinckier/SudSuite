@@ -10,8 +10,8 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from SudMedia.duplicate import quarantine_duplicates, scan_duplicates
-from SudMedia.sudmedia_utils import configure_console_output, format_size
+from SudMedia.utils import configure_console_output, format_size
+from SudMedia.utils.duplicate import quarantine_duplicates, scan_duplicates
 
 
 def print_banner() -> None:

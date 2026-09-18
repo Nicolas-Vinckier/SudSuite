@@ -10,8 +10,8 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from SudMedia.ocr import TesseractBackend, find_tesseract, process_documents
-from SudMedia.sudmedia_utils import configure_console_output
+from SudMedia.utils import configure_console_output
+from SudMedia.utils.ocr import TesseractBackend, find_tesseract, process_documents
 
 
 def print_banner() -> None:

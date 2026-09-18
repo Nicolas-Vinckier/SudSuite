@@ -8,16 +8,16 @@ thématiques :
 - image : configuration Pillow, formats, métadonnées et redimensionnement
 - progress : barre de progression universelle et formatage temporel
 - metrics : calculs de tailles, analyse de qualité et bilans d'opération
-- archive : compression, décompression et vérification d'archives ZIP / TAR.XZ
+- folder_archive : compression, décompression et vérification d'archives ZIP / TAR.XZ
 - duplicate : analyse et détection de doublons exacts et similaires
-- text : extraction de texte, intégration Tesseract OCR et PDF
+- ocr : extraction de texte, intégration Tesseract OCR et PDF
 """
 
 from __future__ import annotations
 
 # Sous-packages thématiques
-from . import archive, console, duplicate, filesystem, hashing, image, metrics, progress, text
-from .archive import (
+from . import console, duplicate, filesystem, folder_archive, hashing, image, metrics, ocr, progress
+from .folder_archive import (
     BUFFER_SIZE,
     CompressionBackendError,
     ExtractionBackendError,
@@ -112,7 +112,7 @@ from .progress import (
     format_size_short,
     render_progress,
 )
-from .text import (
+from .ocr import (
     OCR_EXTENSIONS,
     OCRBackend,
     OCRDocument,
@@ -125,9 +125,6 @@ from .text import (
     render_document,
     write_document,
 )
-
-# Alias pour compatibilité thématique
-ocr = text
 
 __all__ = [
     "BUFFER_SIZE",
@@ -162,7 +159,7 @@ __all__ = [
     "VIDEO_EXTENSIONS",
     "analyze_quality",
     "analyze_size_change",
-    "archive",
+    "folder_archive",
     "archive_base_name",
     "atomic_write_json",
     "atomic_write_text",
@@ -227,7 +224,6 @@ __all__ = [
     "scan_duplicates",
     "scan_folder",
     "select_backend",
-    "text",
     "unique_available_path",
     "unique_path",
     "verify_archive",
