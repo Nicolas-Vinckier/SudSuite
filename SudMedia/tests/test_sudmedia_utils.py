@@ -5,6 +5,13 @@ import unittest
 from pathlib import Path
 
 try:
+    from ._path_setup import add_project_root
+except ImportError:
+    from _path_setup import add_project_root
+
+add_project_root()
+
+try:
     from PIL import Image
 except ImportError:
     Image = None

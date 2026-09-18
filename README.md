@@ -25,6 +25,7 @@ Un outil d'organisation automatisé pour vos photos et vidéos. Il trie vos fich
   3.  **Nom du fichier** : Détecte les dates dans les noms.
 - **Auto-détection intelligente** : Analyse un échantillon de 10% de vos fichiers pour deviner le format de date (`AAAAMMDD`, `DDMMAAAA` ou `MMDDAAAA`).
 - **Mode "Lazy"** : Si vous configurez un dossier vide, le script ne vous posera de questions sur le format que lors du premier tri effectif.
+- **Configuration locale** : Les réglages sont enregistrés dans `SudMedia/configs`, créé automatiquement et ignoré par Git.
 - **Trie inversé (Restauration)** : Option pour annuler un tri et renvoyer tous les fichiers de la destination vers la source (avec gestion des doublons).
 - **Full Cleaning** : Option pour tout réinitialiser (suppression de la config et de TOUTES les photos dans source/destination après confirmation du nombre d'éléments).
 
@@ -140,6 +141,21 @@ Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plus
     ```bash
     pip install PyMuPDF
     ```
+
+### Vérifier SudMedia
+
+Depuis la racine de SudSuite :
+
+```bash
+py -m unittest discover -v
+```
+
+Les fichiers de test peuvent également être lancés directement, y compris depuis
+le dossier `SudMedia` :
+
+```bash
+py .\tests\test_tools.py
+```
 
 ---
 

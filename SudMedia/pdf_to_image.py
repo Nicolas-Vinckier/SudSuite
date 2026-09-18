@@ -25,12 +25,16 @@ except ImportError:
 configure_console_output()
 
 try:
-    import fitz
+    import pymupdf as fitz
 except ImportError:
-    print("❌ La bibliothèque 'PyMuPDF' (fitz) n'est pas installée.")
-    print("Veuillez l'installer avec la commande suivante :")
-    print("   pip install PyMuPDF")
-    sys.exit(1)
+    try:
+        # Compatibilité avec les versions historiques de PyMuPDF.
+        import fitz
+    except ImportError:
+        print("❌ La bibliothèque 'PyMuPDF' n'est pas installée.")
+        print("Veuillez l'installer avec la commande suivante :")
+        print("   pip install PyMuPDF")
+        sys.exit(1)
 
 try:
     from PIL import Image, ImageChops

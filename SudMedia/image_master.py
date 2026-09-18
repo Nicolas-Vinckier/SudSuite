@@ -37,7 +37,7 @@ try:
 except ImportError:
     print("❌ La bibliothèque 'Pillow' n'est pas installée.")
     print("Veuillez l'installer avec la commande suivante :")
-    print("   pip install Pillow")
+    print("> pip install Pillow")
     sys.exit(1)
 
 # --- CONFIGURATION & CONSTANTES ---

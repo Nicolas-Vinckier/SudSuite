@@ -27,7 +27,9 @@ except ImportError:
 
 configure_console_output()
 
-CONFIG_FILE = Path(__file__).with_name("image_sorting_config.json")
+CONFIG_DIRECTORY = Path(__file__).with_name("configs")
+CONFIG_FILE = CONFIG_DIRECTORY / "image_sorting_config.json"
+LEGACY_CONFIG_FILE = Path(__file__).with_name("image_sorting_config.json")
 
 mois_fr = {
     1: "Janvier",
@@ -70,9 +72,22 @@ mois_fr = {
 
 
 def charger_config():
-    if os.path.exists(CONFIG_FILE):
+    config_file = CONFIG_FILE
+    if not config_file.exists() and LEGACY_CONFIG_FILE.exists():
+        config_file.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            shutil.move(str(LEGACY_CONFIG_FILE), str(config_file))
+            print(f"Configuration déplacée vers {config_file}")
+        except OSError as error:
+            print(
+                "[Attention] Impossible de déplacer l'ancienne configuration "
+                f"vers {config_file} : {error}"
+            )
+            config_file = LEGACY_CONFIG_FILE
+
+    if config_file.exists():
+        try:
+            with config_file.open("r", encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError:
             print(
@@ -83,7 +98,8 @@ def charger_config():
 
 
 def sauvegarder_config(config):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+    CONFIG_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    with CONFIG_FILE.open("w", encoding="utf-8") as f:
         json.dump(config, f, indent=4)
 
 

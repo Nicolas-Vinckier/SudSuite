@@ -16,5 +16,5 @@
 *.jfif
 *.crdownload
 
-# Fichier de configuration
-*.json
+# Configurations locales générées par les outils
+**/configs/
