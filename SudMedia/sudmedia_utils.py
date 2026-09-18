@@ -136,16 +136,16 @@ def configure_console_output() -> None:
         # Active le traitement VT100 dans les consoles Windows compatibles.
         os.system("")
 
-    reconfigure = getattr(sys.stdout, "reconfigure", None)
-    if reconfigure is None:
-        return
-
-    try:
-        reconfigure(encoding="utf-8")
-    except (AttributeError, LookupError, OSError):
-        # Une sortie redirigée ou remplacée (tests, IDE) n'est pas toujours
-        # reconfigurable. L'outil reste utilisable avec son encodage courant.
-        pass
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (AttributeError, LookupError, OSError):
+            # Une sortie redirigée ou remplacée (tests, IDE) n'est pas toujours
+            # reconfigurable. L'outil reste utilisable avec son encodage courant.
+            pass
 
 
 def configure_pillow(image_module) -> None:

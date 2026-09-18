@@ -18,3 +18,5 @@
 
 # Configurations locales générées par les outils
 **/configs/
+/SudDuplicate_*
+/SudOCR_*

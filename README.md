@@ -134,6 +134,38 @@ Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plus
 - **Sécurité & Visibilité** : Affichage thread-safe et en tableau pour une gestion claire des dépôts. Aucune opération de `push` automatique.
 - **Bilan Global** : Statut précis pour chaque dépôt (À jour, Mis à jour, Erreur) et affichage de la durée totale.
 
+### 12. 🧬 Sud Duplicate (`SudMedia/sud_duplicate.py`)
+
+Détecte les fichiers strictement identiques et, sur demande, les images
+visuellement similaires.
+
+- **Détection sûre** : Préfiltrage par taille puis comparaison SHA-256.
+- **Similarité visuelle** : Empreinte perceptuelle dHash avec seuil réglable.
+- **Aucune suppression automatique** : Les copies exactes sont déplacées dans
+  une quarantaine horodatée.
+- **Restauration possible** : Chaque quarantaine contient un manifeste indiquant
+  l'origine et la destination de tous les fichiers déplacés.
+
+### 13. 🛡️ Sud Integrity (`SudSecurity/sud_integrity.py`)
+
+Crée puis vérifie un manifeste d'intégrité pour un dossier important.
+
+- **Empreintes SHA-256** : Lecture en flux, adaptée aux fichiers volumineux.
+- **Diagnostic complet** : Signale les fichiers modifiés, absents et ajoutés.
+- **Format portable** : Chemins relatifs et manifeste JSON lisible.
+- **Protection des chemins** : Refuse les entrées qui tentent de sortir du
+  dossier contrôlé.
+
+### 14. 🔤 Sud OCR (`SudMedia/sud_ocr.py`)
+
+Extrait le texte des images et des PDF dans des fichiers UTF-8.
+
+- **PDF hybrides** : Réutilise le texte natif quand il existe et n'applique
+  l'OCR qu'aux pages scannées.
+- **Traitement par lot** : Accepte plusieurs fichiers ou des dossiers complets.
+- **Tolérance aux erreurs** : Un document illisible n'arrête pas le reste du lot.
+- **Sorties isolées** : Un fichier texte paginé est créé pour chaque document.
+
 ---
 
 ## 🛠️ Installation
@@ -147,6 +179,10 @@ Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plus
     ```bash
     pip install PyMuPDF
     ```
+4.  Pour `sud_ocr.py`, installez **Tesseract OCR** sur le système avec les
+    langues souhaitées (`fra` et/ou `eng`). Les PDF nécessitent aussi
+    **PyMuPDF**. Le chemin de Tesseract peut être transmis avec `--tesseract`
+    s'il n'est pas dans le PATH.
 
 ### Vérifier SudMedia
 
@@ -176,6 +212,12 @@ Les règles communes sont regroupées dans `SudMedia/sudmedia_utils.py` :
 - `prepare_image_for_quality()` applique les transformations nécessaires avant sauvegarde.
 
 Les scripts gardent uniquement leurs menus et leur workflow métier.
+
+Les nouveaux outils partagent également `SudCore/files.py` pour le parcours
+filtré, le calcul d'empreintes, la réservation de noms et les écritures JSON
+atomiques. Les moteurs Duplicate, Integrity et OCR restent ainsi indépendants de
+leurs interfaces en ligne de commande et peuvent être réutilisés par d'autres
+scripts.
 
 ---
 
@@ -275,6 +317,39 @@ python SudGit/sud_git_sync.py
 1.  Lancez le script via votre terminal.
 2.  Dans le menu Principal, allez dans la configuration (choix `3`) pour ajouter vos dossiers Git et régler le parallélisme.
 3.  Revenez au menu principal et lancez la GitSync (choix `1`) pour tout mettre à jour en parallèle.
+
+### Rechercher les doublons
+
+```bash
+# Doublons exacts, avec confirmation avant quarantaine
+python SudMedia/sud_duplicate.py ./mes_fichiers
+
+# Ajoute la recherche d'images visuellement similaires
+python SudMedia/sud_duplicate.py ./mes_photos --similar --threshold 6
+```
+
+Les groupes similaires sont uniquement signalés : ils ne sont jamais déplacés
+automatiquement. Seuls les doublons exacts peuvent être mis en quarantaine.
+
+### Contrôler l'intégrité d'un dossier
+
+```bash
+python SudSecurity/sud_integrity.py create ./archives
+python SudSecurity/sud_integrity.py verify ./archives_Integrity_20260918_120000.json --root ./archives
+```
+
+Conservez idéalement le manifeste hors du dossier surveillé et sur un support
+distinct.
+
+### Extraire du texte avec Sud OCR
+
+```bash
+python SudMedia/sud_ocr.py ./scans -l fra+eng
+python SudMedia/sud_ocr.py document.pdf -o ./texte_extrait
+```
+
+Sans Tesseract, l'outil peut encore extraire le texte déjà présent dans un PDF,
+mais il ne peut pas reconnaître une image ou une page scannée.
 
 ---
 
