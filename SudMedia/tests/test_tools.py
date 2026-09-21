@@ -16,6 +16,7 @@ add_project_root()
 from SudMedia.folder_compressor import (
     ExtractionBackendError,
     archive_base_name,
+    build_parser,
     compress_zip_python,
     extract_zip_python,
     inspect_zip_for_extraction,
@@ -52,6 +53,50 @@ class ArchiveToolTests(unittest.TestCase):
             self.assertEqual([entry.arcname for entry in entries], ["photo.jpg"])
             self.assertEqual(total_size, 5)
             self.assertEqual(skipped, [])
+
+    def test_archive_scan_applies_custom_exclusions(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "keep").mkdir()
+            (root / "cache").mkdir()
+            (root / "docs").mkdir()
+            (root / "keep" / "photo.jpg").write_bytes(b"media")
+            (root / "cache" / "temp.jpg").write_bytes(b"ignore-folder")
+            (root / "docs" / "draft.md").write_bytes(b"ignore-extension")
+            (root / "secret.txt").write_bytes(b"ignore-file")
+
+            entries, total_size, skipped = scan_folder(
+                root,
+                quiet=True,
+                exclude_folders=["cache"],
+                exclude_files=["secret.txt"],
+                exclude_extensions=[".md"],
+            )
+
+            self.assertEqual(
+                [entry.arcname for entry in entries],
+                [str(Path("keep") / "photo.jpg")],
+            )
+            self.assertEqual(total_size, 5)
+            self.assertEqual(skipped, [])
+
+    def test_archive_parser_accepts_repeatable_exclusions(self):
+        args = build_parser().parse_args(
+            [
+                "--input",
+                "source",
+                "--exclude-folder",
+                "cache,tmp",
+                "--exclude-file",
+                "secret.txt",
+                "--exclude-ext",
+                "log",
+            ]
+        )
+
+        self.assertEqual(args.exclude_folder, ["cache,tmp"])
+        self.assertEqual(args.exclude_file, ["secret.txt"])
+        self.assertEqual(args.exclude_extension, ["log"])
 
     def test_python_zip_round_trip_preserves_content(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

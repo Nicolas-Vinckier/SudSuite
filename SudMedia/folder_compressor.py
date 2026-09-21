@@ -175,6 +175,17 @@ def _compression_mode(mode):
     )
 
 
+def _split_exclusion_values(values):
+    """Normalise les options d'exclusion repetables et separees par virgules."""
+    normalized = []
+    for raw_value in values or []:
+        for value in str(raw_value).replace(";", ",").split(","):
+            clean_value = value.strip().strip("\"'")
+            if clean_value:
+                normalized.append(clean_value)
+    return normalized
+
+
 def compress_folder(cli_args=None):
     configure_console_output()
     print("\n        SUDMEDIA FOLDER COMPRESSOR - FAST ENGINE\n")
@@ -199,8 +210,25 @@ def compress_folder(cli_args=None):
     if getattr(cli_args, "diagnostic", False):
         print_diagnostics(tools, requested_threads, effective_threads)
     print(f"\n[Analyse] Dossier : {folder_name}")
-    entries, total_size, skipped = scan_folder(target_folder, quiet=quiet)
+    exclude_folders = _split_exclusion_values(getattr(cli_args, "exclude_folder", []))
+    exclude_files = _split_exclusion_values(getattr(cli_args, "exclude_file", []))
+    exclude_extensions = _split_exclusion_values(getattr(cli_args, "exclude_extension", []))
+    entries, total_size, skipped = scan_folder(
+        target_folder,
+        quiet=quiet,
+        exclude_folders=exclude_folders,
+        exclude_files=exclude_files,
+        exclude_extensions=exclude_extensions,
+    )
     print(f"[Analyse] Taille a traiter : {format_size(total_size)} ({len(entries)} fichiers)")
+    if exclude_folders or exclude_files or exclude_extensions:
+        print("[Analyse] Exclusions personnalisees appliquees :")
+        if exclude_folders:
+            print(f"  - Dossiers : {', '.join(exclude_folders)}")
+        if exclude_files:
+            print(f"  - Fichiers : {', '.join(exclude_files)}")
+        if exclude_extensions:
+            print(f"  - Extensions : {', '.join(exclude_extensions)}")
     print(f"[Analyse] CPU : {max(1, os.cpu_count() or 1)} thread(s) logique(s)")
     print(f"[Detection] 7-Zip: {tools.sevenzip or 'absent -> fallback Python pour ZIP'}")
     print(f"[Detection] XZ: {tools.xz or 'absent -> 7-Zip XZ ou fallback Python pour TAR.XZ'}")
@@ -307,6 +335,26 @@ def build_parser():
     parser.add_argument("--xz")
     parser.add_argument("--diagnostic", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--exclude-folder",
+        "--exclude-dir",
+        action="append",
+        default=[],
+        help="Dossier a exclure de l'archive, par nom ou chemin relatif. Repetable, virgules acceptees.",
+    )
+    parser.add_argument(
+        "--exclude-file",
+        action="append",
+        default=[],
+        help="Fichier a exclure de l'archive, par nom ou chemin relatif. Repetable, virgules acceptees.",
+    )
+    parser.add_argument(
+        "--exclude-extension",
+        "--exclude-ext",
+        action="append",
+        default=[],
+        help="Extension a exclure de l'archive, avec ou sans point. Repetable, virgules acceptees.",
+    )
     return parser
 
 

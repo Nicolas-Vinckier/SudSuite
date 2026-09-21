@@ -6,7 +6,6 @@ import os
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
 
 from .constants import EXCLUDE_PATTERNS, IGNORED_DIRECTORY_NAMES
 
@@ -20,6 +19,43 @@ class ScannedEntry:
 
 # Alias pour compatibilité
 FileEntry = ScannedEntry
+
+
+def _normalized_name_patterns(patterns: Iterable[str] | None) -> set[str]:
+    normalized: set[str] = set()
+    if not patterns:
+        return normalized
+    for pattern in patterns:
+        value = os.fspath(pattern).strip().strip("\"'")
+        if not value:
+            continue
+        value = value.replace("\\", "/").strip("/")
+        normalized.add(value.casefold())
+    return normalized
+
+
+def _normalized_extensions(extensions: Iterable[str] | None) -> set[str]:
+    normalized: set[str] = set()
+    if not extensions:
+        return normalized
+    for extension in extensions:
+        value = str(extension).strip().casefold()
+        if not value:
+            continue
+        if not value.startswith("."):
+            value = f".{value}"
+        normalized.add(value)
+    return normalized
+
+
+def _relative_pattern(path: str) -> str:
+    return path.replace("\\", "/").strip("/").casefold()
+
+
+def _matches_named_exclusion(name: str, relative_path: str, exclusions: set[str]) -> bool:
+    if not exclusions:
+        return False
+    return name.casefold() in exclusions or _relative_pattern(relative_path) in exclusions
 
 
 def walk_filtered(
@@ -42,21 +78,39 @@ def scan_folder(
     folder_path: str | os.PathLike[str],
     quiet: bool = False,
     exclude_patterns: Iterable[str] = EXCLUDE_PATTERNS,
+    exclude_folders: Iterable[str] | None = None,
+    exclude_files: Iterable[str] | None = None,
+    exclude_extensions: Iterable[str] | None = None,
 ) -> tuple[list[ScannedEntry], int, list[tuple[str, str]]]:
     """Scan complet d'un dossier : retourne les entrées, la taille totale et les erreurs."""
     start = time.perf_counter()
     entries: list[ScannedEntry] = []
     total_size = 0
     skipped: list[tuple[str, str]] = []
-    excluded = set(exclude_patterns)
+    excluded = _normalized_name_patterns(exclude_patterns)
+    excluded_folders = _normalized_name_patterns(exclude_folders)
+    excluded_files = _normalized_name_patterns(exclude_files)
+    excluded_extensions = _normalized_extensions(exclude_extensions)
 
     for root, dirs, files in os.walk(folder_path, followlinks=False):
-        dirs[:] = [d for d in dirs if d not in excluded and not d.startswith((".", "__"))]
+        dirs[:] = [
+            directory
+            for directory in dirs
+            if not directory.startswith((".", "__"))
+            and not _matches_named_exclusion(
+                directory,
+                os.path.relpath(os.path.join(root, directory), folder_path),
+                excluded | excluded_folders,
+            )
+        ]
         for filename in files:
-            if filename in excluded:
-                continue
             full_path = os.path.join(root, filename)
             arcname = os.path.relpath(full_path, folder_path)
+            if (
+                _matches_named_exclusion(filename, arcname, excluded | excluded_files)
+                or os.path.splitext(filename)[1].casefold() in excluded_extensions
+            ):
+                continue
             try:
                 size = os.path.getsize(full_path)
             except OSError as exc:

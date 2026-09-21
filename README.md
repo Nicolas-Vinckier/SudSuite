@@ -38,6 +38,7 @@ Un outil de compression de dossiers intelligent pour archiver vos projets tout e
   2. **Medium** : Équilibre poids/vitesse (ZIP optimisé).
   3. **Ultra** : Compression maximale (Format `.tar.xz` via LZMA).
 - **Filtres Smart** : Ignore automatiquement les dossiers comme `.git`, `node_modules`, `__pycache__`, etc.
+- **Exclusions personnalisées** : Peut ignorer des dossiers, fichiers ou extensions via `--exclude-folder`, `--exclude-file` et `--exclude-extension`.
 - **Auto-Naming** : Génère automatiquement un nom avec horodatage (ex: `Projet_Archive_20240414_2125.zip`).
 - **Progression en temps réel** : Affiche le pourcentage, les fichiers et octets traités, la vitesse actuelle, le temps écoulé et une estimation du temps restant, y compris avec les moteurs externes compatibles.
 - **Estimation & Vérification** : Calcule le gain d'espace et vérifie l'intégrité de l'archive après création.
@@ -259,6 +260,11 @@ python folder_compressor.py
 ```
 
 Laissez-vous guider par le menu pour choisir le dossier et le niveau de compression.
+Vous pouvez aussi exclure des éléments de l'archive en ligne de commande :
+
+```bash
+python folder_compressor.py --input ./mon_dossier --mode 1 --exclude-folder cache,tmp --exclude-file secrets.txt --exclude-extension log
+```
 
 ### Renommer ses fichiers en masse
 
