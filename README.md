@@ -111,7 +111,17 @@ Analyse le poids d'un dossier, affiche son arborescence triée par taille et peu
 - **Affichage configurable** : Profondeur, top des fichiers et exclusions techniques réglables.
 - **Mode automatisable** : Interface interactive ou arguments en ligne de commande.
 
-### 10. 🔒 Sud Vault Sync (`sud_vault_sync.py`)
+### 10. 📊 Sud Excel to PDF (`excel_to_pdf.py`)
+
+Convertit des fichiers Excel en PDF en ajustant chaque feuille sur une seule
+page, y compris lorsque le tableau est très grand.
+
+- **Une page par feuille** : Excel force la largeur et la hauteur a une page ; LibreOffice utilise `SinglePageSheets` en repli.
+- **Traitement par lot** : Accepte des fichiers Excel individuels ou des dossiers.
+- **Formats acceptés** : `.xls`, `.xlsx`, `.xlsm` et `.ods`.
+- **Sorties sûres** : Ne remplace pas un PDF existant portant le même nom.
+
+### 11. 🔒 Sud Vault Sync (`sud_vault_sync.py`)
 
 Un outil de sécurité robuste permettant de chiffrer un dossier local vers un dossier distant (type Google Drive, OneDrive) et de synchroniser les modifications de manière bidirectionnelle.
 
@@ -121,7 +131,7 @@ Un outil de sécurité robuste permettant de chiffrer un dossier local vers un d
 - **Synchronisation Continue Bidirectionnelle** : Applique intelligemment les ajouts, modifications et suppressions entre le local et le dossier chiffré cloud en permanence.
 - **Sécurité** : Les fichiers originaux ne sont écrasés qu'en cas de mise à jour légitime et les modes unidirectionnels ne font que des copies.
 
-### 11. 📥 SudGit Sync (`SudGit/sud_git_sync.py`)
+### 12. 📥 SudGit Sync (`SudGit/sud_git_sync.py`)
 
 Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plusieurs dépôts Git locaux simultanément et en parallèle.
 
@@ -135,7 +145,7 @@ Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plus
 - **Sécurité & Visibilité** : Affichage thread-safe et en tableau pour une gestion claire des dépôts. Aucune opération de `push` automatique.
 - **Bilan Global** : Statut précis pour chaque dépôt (À jour, Mis à jour, Erreur) et affichage de la durée totale.
 
-### 12. 🧬 Sud Duplicate (`SudMedia/sud_duplicate.py`)
+### 13. 🧬 Sud Duplicate (`SudMedia/sud_duplicate.py`)
 
 Détecte les fichiers strictement identiques et, sur demande, les images
 visuellement similaires.
@@ -147,7 +157,7 @@ visuellement similaires.
 - **Restauration possible** : Chaque quarantaine contient un manifeste indiquant
   l'origine et la destination de tous les fichiers déplacés.
 
-### 13. 🛡️ Sud Integrity (`SudSecurity/sud_integrity.py`)
+### 14. 🛡️ Sud Integrity (`SudSecurity/sud_integrity.py`)
 
 Crée puis vérifie un manifeste d'intégrité pour un dossier important.
 
@@ -157,7 +167,7 @@ Crée puis vérifie un manifeste d'intégrité pour un dossier important.
 - **Protection des chemins** : Refuse les entrées qui tentent de sortir du
   dossier contrôlé.
 
-### 14. 🔤 Sud OCR (`SudMedia/sud_ocr.py`)
+### 15. 🔤 Sud OCR (`SudMedia/sud_ocr.py`)
 
 Extrait le texte des images et des PDF dans des fichiers UTF-8.
 
@@ -180,7 +190,10 @@ Extrait le texte des images et des PDF dans des fichiers UTF-8.
     ```bash
     pip install PyMuPDF
     ```
-4.  Pour `sud_ocr.py`, installez **Tesseract OCR** sur le système avec les
+4.  Pour `excel_to_pdf.py`, installez **Microsoft Excel** ou **LibreOffice**.
+    Sous Windows, Excel est utilisé en priorité ; LibreOffice sert de repli et
+    son exécutable `soffice` est détecté automatiquement.
+5.  Pour `sud_ocr.py`, installez **Tesseract OCR** sur le système avec les
     langues souhaitées (`fra` et/ou `eng`). Les PDF nécessitent aussi
     **PyMuPDF**. Le chemin de Tesseract peut être transmis avec `--tesseract`
     s'il n'est pas dans le PATH.
@@ -303,6 +316,18 @@ python image_resizer.py ./vacances
 1.  Indiquez le fichier ou dossier à traiter.
 2.  Entrez les dimensions cibles (Largeur et Hauteur).
 3.  Sélectionnez la méthode de redimensionnement (le mode "Remplissage" est idéal pour le portrait/paysage).
+
+### Convertir un tableur Excel en PDF sur une page
+
+```bash
+python SudMedia/excel_to_pdf.py ./rapport.xlsx
+python SudMedia/excel_to_pdf.py ./mes_tableurs -o ./pdf
+```
+
+Le script place chaque feuille du tableur sur une seule page PDF. Sous Windows,
+il utilise Excel en priorité et LibreOffice en repli. Vous pouvez forcer un
+moteur avec `--backend excel` ou `--backend libreoffice`, et indiquer le chemin
+de LibreOffice avec `--soffice` si besoin.
 
 ### Utiliser le Master Tool (Tout-en-un)
 

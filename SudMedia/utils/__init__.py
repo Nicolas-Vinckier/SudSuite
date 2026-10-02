@@ -11,12 +11,13 @@ thématiques :
 - folder_archive : compression, décompression et vérification d'archives ZIP / TAR.XZ
 - duplicate : analyse et détection de doublons exacts et similaires
 - ocr : extraction de texte, intégration Tesseract OCR et PDF
+- office : conversion LibreOffice de documents bureautiques
 """
 
 from __future__ import annotations
 
 # Sous-packages thématiques
-from . import console, duplicate, filesystem, folder_archive, hashing, image, metrics, ocr, progress
+from . import console, duplicate, filesystem, folder_archive, hashing, image, metrics, ocr, office, progress
 from .folder_archive import (
     BUFFER_SIZE,
     CompressionBackendError,
@@ -125,6 +126,15 @@ from .ocr import (
     render_document,
     write_document,
 )
+from .office import (
+    SPREADSHEET_EXTENSIONS,
+    OfficeConversionError,
+    SpreadsheetPdfResult,
+    collect_spreadsheets,
+    convert_spreadsheet_to_pdf,
+    find_excel,
+    find_soffice,
+)
 
 __all__ = [
     "BUFFER_SIZE",
@@ -146,14 +156,17 @@ __all__ = [
     "OCRResult",
     "OCR_EXTENSIONS",
     "OCRBackend",
+    "OfficeConversionError",
     "ProcessingStats",
     "Progress",
     "ProgressReader",
     "QualityAnalysis",
     "QuarantineResult",
     "RESIZE_METHODS",
+    "SPREADSHEET_EXTENSIONS",
     "ScannedEntry",
     "SizeAnalysis",
+    "SpreadsheetPdfResult",
     "TesseractBackend",
     "Toolchain",
     "VIDEO_EXTENSIONS",
@@ -164,6 +177,7 @@ __all__ = [
     "atomic_write_json",
     "atomic_write_text",
     "clean_input_path",
+    "collect_spreadsheets",
     "collect_files",
     "collect_target_files",
     "compress_tar_xz_python",
@@ -172,6 +186,7 @@ __all__ = [
     "configure_pillow",
     "console",
     "content_hash",
+    "convert_spreadsheet_to_pdf",
     "describe_backend",
     "detect_archive_format",
     "detect_sevenzip",
@@ -186,6 +201,8 @@ __all__ = [
     "extract_zip_python",
     "filesystem",
     "find_tesseract",
+    "find_excel",
+    "find_soffice",
     "format_duration",
     "format_size",
     "format_size_short",
@@ -201,6 +218,7 @@ __all__ = [
     "metrics",
     "normalize_quality",
     "ocr",
+    "office",
     "parse_threads",
     "paths_overlap",
     "prepare_image_for_format",

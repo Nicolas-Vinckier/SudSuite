@@ -16,7 +16,12 @@ except ImportError:
 
 add_project_root()
 
-from SudMedia import sud_duplicate, sud_ocr
+from SudMedia import excel_to_pdf, sud_duplicate, sud_ocr
+from SudMedia.utils.office import (
+    OfficeConversionError,
+    SpreadsheetPdfResult,
+    convert_spreadsheet_to_pdf,
+)
 from SudMedia.utils.filesystem.paths import (
     ExtractionBackendError,
     detect_archive_format,
@@ -84,6 +89,101 @@ class OCRCliTests(unittest.TestCase):
 
         self.assertEqual(status, 1)
         self.assertEqual(process.call_args.kwargs["dpi"], 72)
+
+
+class ExcelToPdfTests(unittest.TestCase):
+    def test_parser_exposes_one_page_pdf_options(self):
+        args = excel_to_pdf.build_parser().parse_args([])
+
+        self.assertIsNone(args.output)
+        self.assertIsNone(args.soffice)
+        self.assertEqual(args.backend, "auto")
+        self.assertEqual(args.timeout, 300)
+
+    def test_conversion_uses_single_page_sheets_filter(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "rapport.xlsx"
+            source.write_bytes(b"tableur")
+            output = root / "pdf"
+
+            def fake_run(command, **_kwargs):
+                export_dir = Path(command[command.index("--outdir") + 1])
+                (export_dir / "rapport.pdf").write_bytes(b"pdf")
+                return mock.Mock(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch(
+                    "SudMedia.utils.office.spreadsheet_pdf.find_soffice",
+                    return_value="soffice",
+                ),
+                mock.patch(
+                    "SudMedia.utils.office.spreadsheet_pdf.subprocess.run",
+                    side_effect=fake_run,
+                ) as run,
+            ):
+                result = convert_spreadsheet_to_pdf(source, output, backend="libreoffice")
+
+            command = run.call_args.args[0]
+            self.assertIn("SinglePageSheets", command[command.index("--convert-to") + 1])
+            self.assertTrue(any(argument.startswith("-env:UserInstallation=") for argument in command))
+            self.assertEqual(result.output, output / "rapport.pdf")
+            self.assertEqual(result.output.read_bytes(), b"pdf")
+
+    def test_excel_backend_fits_each_sheet_on_one_page(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "rapport.xlsx"
+            source.write_bytes(b"tableur")
+            output = root / "pdf"
+
+            def fake_run(command, **_kwargs):
+                script = command[-1]
+                output_path = script.split("ExportAsFixedFormat(0, '", 1)[1].split("'", 1)[0]
+                Path(output_path).write_bytes(b"pdf")
+                return mock.Mock(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch(
+                    "SudMedia.utils.office.spreadsheet_pdf.find_excel",
+                    return_value="powershell.exe",
+                ),
+                mock.patch(
+                    "SudMedia.utils.office.spreadsheet_pdf.subprocess.run",
+                    side_effect=fake_run,
+                ) as run,
+            ):
+                result = convert_spreadsheet_to_pdf(source, output, backend="excel")
+
+            script = run.call_args.args[0][-1]
+            self.assertIn("FitToPagesWide = 1", script)
+            self.assertIn("FitToPagesTall = 1", script)
+            self.assertEqual(result.output.read_bytes(), b"pdf")
+
+    def test_main_continues_when_one_conversion_fails(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = root / "premier.xlsx"
+            second = root / "second.xlsx"
+            first.write_bytes(b"one")
+            second.write_bytes(b"two")
+            output = root / "pdf"
+
+            with (
+                mock.patch.object(excel_to_pdf, "configure_console_output"),
+                mock.patch.object(
+                    excel_to_pdf,
+                    "convert_spreadsheet_to_pdf",
+                    side_effect=[
+                        SpreadsheetPdfResult(first, output / "premier.pdf"),
+                        OfficeConversionError("conversion impossible"),
+                    ],
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                status = excel_to_pdf.main([str(first), str(second), "-o", str(output)])
+
+        self.assertEqual(status, 1)
 
 
 class ErrorPathTests(unittest.TestCase):

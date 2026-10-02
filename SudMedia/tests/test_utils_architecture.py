@@ -51,6 +51,7 @@ from SudMedia.utils import (
     scan_duplicates,
     scan_folder,
     ocr,
+    office,
     unique_available_path,
     unique_path,
     walk_filtered,
@@ -74,6 +75,7 @@ class UtilsArchitectureTests(unittest.TestCase):
         self.assertTrue(callable(img_resize))
         self.assertTrue(callable(met_format_size))
         self.assertTrue(callable(dupl_scan))
+        self.assertTrue(callable(office.convert_spreadsheet_to_pdf))
         self.assertTrue(issubclass(Prog, Progress))
 
     def test_atomic_writes(self):
