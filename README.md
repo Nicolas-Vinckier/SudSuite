@@ -177,6 +177,17 @@ Extrait le texte des images et des PDF dans des fichiers UTF-8.
 - **Tolérance aux erreurs** : Un document illisible n'arrête pas le reste du lot.
 - **Sorties isolées** : Un fichier texte paginé est créé pour chaque document.
 
+### 16. 📦 Sud DOCX Optimizer (`SudMedia/docx_optimizer.py`)
+
+Optimise la taille des documents Word `.docx` sans modifier l'original. Le moteur travaille directement sur le package OOXML et vérifie son intégrité après traitement.
+
+- **Sans perte** : recompression des PNG uniquement, sans changement de format.
+- **Intelligent (recommandé)** : convertit en JPEG seulement les PNG opaques à profil photographique et seulement si le gain est significatif.
+- **Agressif** : teste tous les PNG opaques et peut aussi recomprimer les JPEG existants.
+- **Transparence protégée** : les PNG utilisant réellement un canal alpha restent en PNG.
+- **Références OOXML sécurisées** : mise à jour automatique des fichiers `.rels` et de `[Content_Types].xml` lors d'un changement `.png` → `.jpg`.
+- **Original préservé** : sortie horodatée par défaut et vérification CRC + relations internes après génération.
+
 ---
 
 ## 🛠️ Installation
@@ -234,6 +245,7 @@ Les utilitaires et moteurs de SudMedia sont désormais centralisés et organisé
 - **`SudMedia/utils/folder_archive/`** : Moteurs de compression (`compress_zip_*`, `compress_tar_xz_*`), d'extraction et de vérification d'intégrité.
 - **`SudMedia/utils/duplicate/`** : Moteur de détection de doublons exacts et visuels (`scan_duplicates`, `quarantine_duplicates`).
 - **`SudMedia/utils/ocr/`** : Moteur OCR et extraction textuelle (`extract_document`, `process_documents`, `TesseractBackend`).
+- **`SudMedia/utils/office/`** : Conversion Excel/PDF et optimisation DOCX (`convert_spreadsheet_to_pdf`, `optimize_docx`, `verify_docx_package`).
 
 Une façade de compatibilité `SudMedia/sudmedia_utils.py` ainsi que des shims réexportent l'ensemble de ces symboles pour garantir la rétrocompatibilité totale avec les scripts existants.
 
@@ -385,6 +397,24 @@ python SudMedia/sud_ocr.py document.pdf -o ./texte_extrait
 
 Sans Tesseract, l'outil peut encore extraire le texte déjà présent dans un PDF,
 mais il ne peut pas reconnaître une image ou une page scannée.
+
+### Optimiser un document DOCX
+
+```bash
+# Mode intelligent par défaut
+python SudMedia/docx_optimizer.py ./document.docx
+
+# Optimisation sans perte
+python SudMedia/docx_optimizer.py ./document.docx --mode lossless
+
+# Gain maximal, qualité JPEG 80
+python SudMedia/docx_optimizer.py ./document.docx --mode aggressive --quality 80
+
+# Traiter tous les DOCX d'un dossier
+python SudMedia/docx_optimizer.py ./documents -o ./documents_optimises
+```
+
+Le mode intelligent conserve les images transparentes en PNG et ne passe un PNG opaque en JPEG que si l'image semble photographique et que le gain dépasse 10 % par défaut. Le mode agressif baisse ce seuil à 1 % et peut recomprimer les JPEG déjà présents.
 
 ---
 

@@ -11,7 +11,7 @@ thématiques :
 - folder_archive : compression, décompression et vérification d'archives ZIP / TAR.XZ
 - duplicate : analyse et détection de doublons exacts et similaires
 - ocr : extraction de texte, intégration Tesseract OCR et PDF
-- office : conversion LibreOffice de documents bureautiques
+- office : conversion et optimisation de documents bureautiques (Excel/PDF, DOCX)
 """
 
 from __future__ import annotations
@@ -127,13 +127,20 @@ from .ocr import (
     write_document,
 )
 from .office import (
+    DOCX_EXTENSIONS,
+    DocxMediaChange,
+    DocxOptimizationError,
+    DocxOptimizationResult,
     SPREADSHEET_EXTENSIONS,
     OfficeConversionError,
     SpreadsheetPdfResult,
     collect_spreadsheets,
+    collect_docx,
     convert_spreadsheet_to_pdf,
     find_excel,
     find_soffice,
+    optimize_docx,
+    verify_docx_package,
 )
 
 __all__ = [
@@ -156,6 +163,10 @@ __all__ = [
     "OCRResult",
     "OCR_EXTENSIONS",
     "OCRBackend",
+    "DOCX_EXTENSIONS",
+    "DocxMediaChange",
+    "DocxOptimizationError",
+    "DocxOptimizationResult",
     "OfficeConversionError",
     "ProcessingStats",
     "Progress",
@@ -178,6 +189,7 @@ __all__ = [
     "atomic_write_text",
     "clean_input_path",
     "collect_spreadsheets",
+    "collect_docx",
     "collect_files",
     "collect_target_files",
     "compress_tar_xz_python",
@@ -219,6 +231,7 @@ __all__ = [
     "normalize_quality",
     "ocr",
     "office",
+    "optimize_docx",
     "parse_threads",
     "paths_overlap",
     "prepare_image_for_format",
@@ -245,6 +258,7 @@ __all__ = [
     "unique_available_path",
     "unique_path",
     "verify_archive",
+    "verify_docx_package",
     "walk_filtered",
     "write_document",
 ]
