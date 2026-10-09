@@ -223,6 +223,67 @@ class ArchiveToolTests(unittest.TestCase):
             self.assertTrue((out_dir / "unique_doc.txt").is_file())
             self.assertEqual((out_dir / "unique_doc.txt").read_bytes(), b"Contenu direct")
 
+    def test_decompress_skips_identical_archive_rerun(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            src = root / "src"
+            src.mkdir()
+            (src / "fichier.txt").write_bytes(b"Donnees identiques")
+            entries, size, _ = scan_folder(src, quiet=True)
+            arch = root / "Archive.zip"
+            compress_zip_python(entries, size, arch, "1", quiet=True)
+
+            out_dir = root / "output"
+            # Premier unzip
+            args = build_parser().parse_args([
+                "-d", "-i", str(arch), "-o", str(out_dir), "--quiet"
+            ])
+            res1 = decompress_archive(args)
+            self.assertEqual(res1, 0)
+            dest_file = out_dir / "Archive" / "fichier.txt"
+            self.assertTrue(dest_file.is_file())
+            mtime_before = dest_file.stat().st_mtime_ns
+
+            # Second unzip (même archive)
+            res2 = decompress_archive(args)
+            self.assertEqual(res2, 0)
+            mtime_after = dest_file.stat().st_mtime_ns
+            # Vérifier que le fichier n'a pas été réécrit ni dupliqué
+            self.assertEqual(mtime_before, mtime_after)
+            self.assertFalse((out_dir / "Archive" / "fichier_2.txt").exists())
+
+    def test_decompress_renames_on_checksum_mismatch(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            out_dir = root / "output"
+            out_dir.mkdir()
+            target_folder = out_dir / "MonArchive"
+            target_folder.mkdir()
+            # Fichier existant avec un contenu A
+            existing_file = target_folder / "rapport.txt"
+            existing_file.write_bytes(b"Version A existante")
+
+            # Nouvelle archive contenant rapport.txt avec un contenu B différent
+            src = root / "src"
+            src.mkdir()
+            (src / "rapport.txt").write_bytes(b"Version B nouvelle")
+            entries, size, _ = scan_folder(src, quiet=True)
+            arch = root / "MonArchive.zip"
+            compress_zip_python(entries, size, arch, "1", quiet=True)
+
+            args = build_parser().parse_args([
+                "-d", "-i", str(arch), "-o", str(out_dir), "--quiet"
+            ])
+            res = decompress_archive(args)
+            self.assertEqual(res, 0)
+
+            # L'ancien fichier reste intact
+            self.assertEqual(existing_file.read_bytes(), b"Version A existante")
+            # Le nouveau fichier a été extrait sous un nom numéroté
+            renamed_file = target_folder / "rapport_2.txt"
+            self.assertTrue(renamed_file.is_file())
+            self.assertEqual(renamed_file.read_bytes(), b"Version B nouvelle")
+
 
 class FolderWeightToolTests(unittest.TestCase):
     def test_weight_scan_aggregates_children(self):

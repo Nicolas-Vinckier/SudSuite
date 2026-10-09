@@ -15,6 +15,8 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import zipfile
+
 from SudMedia.utils.folder_archive import (
     CompressionBackendError,
     ExtractionBackendError,
@@ -75,6 +77,7 @@ from SudMedia.utils.filesystem import (
     scan_folder,
     unique_path,
 )
+from SudMedia.utils.hashing import content_hash, file_crc32
 from SudMedia.utils.metrics import analyze_size_change, format_size
 from SudMedia.utils.progress import (
     Progress,
@@ -101,25 +104,84 @@ def _resolved_input_path(raw_path):
     return (path if path.is_absolute() else Path.cwd() / path).resolve()
 
 
-def _extract_staging_to_destination(
-    staging_folder: Path, final_folder: Path, create_subfolder: bool = True
-):
-    """Déplace le contenu du dossier d'étape vers la destination finale."""
-    if create_subfolder:
-        staging_folder.replace(final_folder)
-    else:
-        final_folder.mkdir(parents=True, exist_ok=True)
-        for item in staging_folder.iterdir():
-            dest_item = final_folder / item.name
-            if dest_item.exists():
-                if dest_item.is_dir() and item.is_dir():
-                    shutil.copytree(item, dest_item, dirs_exist_ok=True)
-                    shutil.rmtree(item, ignore_errors=True)
-                    continue
-                elif dest_item.is_file():
-                    dest_item.unlink()
-            shutil.move(str(item), str(dest_item))
-        shutil.rmtree(staging_folder, ignore_errors=True)
+def check_archive_already_extracted(
+    archive_path: Path, destination_folder: Path
+) -> tuple[bool, int, int]:
+    """Vérifie si tous les fichiers de l'archive sont déjà présents avec un CRC32 identique."""
+    if not destination_folder.exists() or not destination_folder.is_dir():
+        return False, 0, 0
+    try:
+        format_name = detect_archive_format(archive_path)
+        if format_name == "zip":
+            with zipfile.ZipFile(archive_path, "r", allowZip64=True) as archive:
+                infolist = [info for info in archive.infolist() if not info.is_dir()]
+                if not infolist:
+                    return False, 0, 0
+                total_size = 0
+                for info in infolist:
+                    target = safe_member_path(destination_folder, info.filename)
+                    if not target.is_file():
+                        return False, 0, 0
+                    if target.stat().st_size != info.file_size:
+                        return False, 0, 0
+                    if file_crc32(target) != info.CRC:
+                        return False, 0, 0
+                    total_size += info.file_size
+                return True, len(infolist), total_size
+    except Exception:
+        return False, 0, 0
+    return False, 0, 0
+
+
+def smart_merge_extracted(
+    staging_folder: Path,
+    destination_folder: Path,
+) -> tuple[int, int, int, int]:
+    """Fusionne le dossier d'étape vers la destination en vérifiant les sommes de contrôle.
+
+    - Si le fichier n'existe pas : extrait normalement.
+    - Si le fichier existe avec le même checksum (SHA256) : ignoré (économie de puissance et pas de doublon).
+    - Si le fichier existe avec un checksum différent : renommé avec un index unique pour préserver les deux.
+    """
+    new_count = 0
+    skipped_count = 0
+    renamed_count = 0
+    total_extracted_size = 0
+
+    destination_folder.mkdir(parents=True, exist_ok=True)
+
+    for root, _, filenames in os.walk(staging_folder):
+        for filename in filenames:
+            staged_file = Path(root) / filename
+            rel_path = staged_file.relative_to(staging_folder)
+            target_file = destination_folder / rel_path
+
+            if not target_file.exists():
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                file_size = staged_file.stat().st_size
+                shutil.move(str(staged_file), str(target_file))
+                new_count += 1
+                total_extracted_size += file_size
+            else:
+                staged_size = staged_file.stat().st_size
+                target_size = target_file.stat().st_size
+                is_identical = False
+                if staged_size == target_size:
+                    if content_hash(staged_file) == content_hash(target_file):
+                        is_identical = True
+
+                if is_identical:
+                    skipped_count += 1
+                else:
+                    renamed_target = unique_path(target_file)
+                    renamed_target.parent.mkdir(parents=True, exist_ok=True)
+                    file_size = staged_file.stat().st_size
+                    shutil.move(str(staged_file), str(renamed_target))
+                    renamed_count += 1
+                    total_extracted_size += file_size
+
+    shutil.rmtree(staging_folder, ignore_errors=True)
+    return new_count, skipped_count, renamed_count, total_extracted_size
 
 
 def decompress_single_archive(
@@ -143,14 +205,34 @@ def decompress_single_archive(
     destination_root, final_folder = resolve_extraction_paths(
         archive_path, destination_input, create_subfolder=create_subfolder
     )
-    if create_subfolder and final_folder.exists():
-        final_folder = unique_path(final_folder)
+
+    # Vérification préventive : l'archive est-elle déjà 100% extraite et identique ?
+    is_identical, total_files, total_sz = check_archive_already_extracted(
+        archive_path, final_folder
+    )
+    if is_identical:
+        if show_header and not quiet:
+            print("\n" + "=" * 60)
+            print("DECOMPRESSION")
+            print("=" * 60)
+            print(f"[Source] {archive_path}")
+            print(f"[Destination] {final_folder}")
+            print(f"[Format] {archive_format.upper()}")
+        if show_footer and not quiet:
+            print("\n" + "=" * 60)
+            print("DECOMPRESSION TERMINEE")
+            print("=" * 60)
+            print("Statut             : Deja extrait (100% identique, checksum valide)")
+            print(f"Fichiers ignores    : {total_files} (aucun doublon cree)")
+            print(f"Emplacement         : {final_folder}")
+            print("=" * 60)
+        return "skip-identical", total_files, 0, final_folder
 
     staging_folder = make_staging_folder(
-        destination_root, final_folder, allow_existing_final=not create_subfolder
+        destination_root, final_folder, allow_existing_final=True
     )
 
-    if show_header:
+    if show_header and not quiet:
         print("\n" + "=" * 60)
         print("DECOMPRESSION")
         print("=" * 60)
@@ -163,7 +245,7 @@ def decompress_single_archive(
 
     started_at = time.perf_counter()
     try:
-        used_backend, file_count, total_size = execute_extraction(
+        used_backend, _raw_files, _raw_size = execute_extraction(
             archive_format,
             archive_path,
             staging_folder,
@@ -173,24 +255,26 @@ def decompress_single_archive(
             effective_threads,
             quiet=quiet,
         )
-        _extract_staging_to_destination(
-            staging_folder, final_folder, create_subfolder=create_subfolder
+        new_cnt, skipped_cnt, renamed_cnt, extracted_sz = smart_merge_extracted(
+            staging_folder, final_folder
         )
         elapsed = time.perf_counter() - started_at
 
-        if show_footer:
+        if show_footer and not quiet:
             print("\n" + "=" * 60)
             print("DECOMPRESSION TERMINEE")
             print("=" * 60)
             print(f"Moteur             : {describe_backend(used_backend)}")
             print(f"Temps total         : {elapsed:.2f} s")
-            if total_size is not None:
-                print(f"Taille extraite     : {format_size(total_size)}")
-            if file_count is not None:
-                print(f"Fichiers            : {file_count}")
+            print(f"Nouveaux fichiers   : {new_cnt}")
+            if skipped_cnt:
+                print(f"Fichiers identiques : {skipped_cnt} (non dupliques)")
+            if renamed_cnt:
+                print(f"Fichiers renomes    : {renamed_cnt} (conflits evites)")
+            print(f"Taille extraite     : {format_size(extracted_sz)}")
             print(f"Emplacement         : {final_folder}")
             print("=" * 60)
-        return used_backend, file_count, total_size, final_folder
+        return used_backend, new_cnt + renamed_cnt, extracted_sz, final_folder
     except Exception:
         shutil.rmtree(staging_folder, ignore_errors=True)
         raise
@@ -266,15 +350,20 @@ def decompress_folder_archives(
             if file_count is not None:
                 total_files_count += file_count
             successes.append(
-                (archive_path, final_folder, arch_elapsed, total_size)
+                (archive_path, final_folder, arch_elapsed, total_size, used_backend)
             )
             if not quiet:
-                size_label = (
-                    f" ({format_size(total_size)})" if total_size is not None else ""
-                )
-                print(
-                    f"  -> Reussie en {arch_elapsed:.2f} s{size_label} -> {final_folder}"
-                )
+                if used_backend == "skip-identical":
+                    print(
+                        f"  -> Deja extrait (100% identique, decompresssion ignoree) -> {final_folder}"
+                    )
+                else:
+                    size_label = (
+                        f" ({format_size(total_size)})" if total_size is not None else ""
+                    )
+                    print(
+                        f"  -> Reussie en {arch_elapsed:.2f} s{size_label} -> {final_folder}"
+                    )
         except KeyboardInterrupt:
             if not quiet:
                 print(
