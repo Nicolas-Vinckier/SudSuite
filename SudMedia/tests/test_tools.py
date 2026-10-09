@@ -18,7 +18,11 @@ from SudMedia.folder_compressor import (
     archive_base_name,
     build_parser,
     compress_zip_python,
+    decompress_archive,
+    decompress_folder_archives,
+    decompress_single_archive,
     extract_zip_python,
+    find_archive_files,
     inspect_zip_for_extraction,
     safe_member_path,
     scan_folder,
@@ -128,6 +132,96 @@ class ArchiveToolTests(unittest.TestCase):
                 (destination / "album" / "photo.txt").read_bytes(),
                 expected,
             )
+
+    def test_find_archive_files_detects_archives(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            sub = root / "subfolder"
+            sub.mkdir()
+            (root / "arch1.zip").write_bytes(b"PK")
+            (root / "arch2.tar.xz").write_bytes(b"\xfd7zXZ\x00")
+            (root / "not_archive.txt").write_bytes(b"text")
+            (sub / "arch3.zip").write_bytes(b"PK")
+
+            # Non récursif
+            found_flat = find_archive_files(root, recursive=False)
+            names_flat = [p.name for p in found_flat]
+            self.assertIn("arch1.zip", names_flat)
+            self.assertIn("arch2.tar.xz", names_flat)
+            self.assertNotIn("arch3.zip", names_flat)
+            self.assertNotIn("not_archive.txt", names_flat)
+
+            # Récursif
+            found_rec = find_archive_files(root, recursive=True)
+            names_rec = [p.name for p in found_rec]
+            self.assertIn("arch1.zip", names_rec)
+            self.assertIn("arch2.tar.xz", names_rec)
+            self.assertIn("arch3.zip", names_rec)
+
+    def test_decompress_folder_archives_batch(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            folder_with_archives = root / "archives_in"
+            folder_with_archives.mkdir()
+
+            # Créer deux archives de test
+            src1 = root / "src1"
+            src1.mkdir()
+            (src1 / "doc1.txt").write_bytes(b"Fichier 1")
+            entries1, size1, _ = scan_folder(src1, quiet=True)
+            arch1 = folder_with_archives / "8 oct. a 09-23.zip"
+            compress_zip_python(entries1, size1, arch1, "1", quiet=True)
+
+            src2 = root / "src2"
+            src2.mkdir()
+            (src2 / "doc2.txt").write_bytes(b"Fichier 2")
+            entries2, size2, _ = scan_folder(src2, quiet=True)
+            arch2 = folder_with_archives / "8 oct. a 10-57.zip"
+            compress_zip_python(entries2, size2, arch2, "1", quiet=True)
+
+            out_dir = root / "extracted_all"
+            args = build_parser().parse_args([
+                "--action", "decompress",
+                "--input", str(folder_with_archives),
+                "--output", str(out_dir),
+                "--quiet",
+            ])
+            res = decompress_archive(args)
+            self.assertEqual(res, 0)
+
+            # Vérifier que les sous-dossiers ont été créés et contiennent les fichiers
+            dest1 = out_dir / "8 oct. a 09-23"
+            dest2 = out_dir / "8 oct. a 10-57"
+            self.assertTrue((dest1 / "doc1.txt").is_file())
+            self.assertEqual((dest1 / "doc1.txt").read_bytes(), b"Fichier 1")
+            self.assertTrue((dest2 / "doc2.txt").is_file())
+            self.assertEqual((dest2 / "doc2.txt").read_bytes(), b"Fichier 2")
+
+    def test_decompress_folder_archives_flat_mode(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            folder_with_archives = root / "archives_in"
+            folder_with_archives.mkdir()
+
+            src = root / "src"
+            src.mkdir()
+            (src / "unique_doc.txt").write_bytes(b"Contenu direct")
+            entries, size, _ = scan_folder(src, quiet=True)
+            arch = folder_with_archives / "Archive_Test.zip"
+            compress_zip_python(entries, size, arch, "1", quiet=True)
+
+            out_dir = root / "extracted_flat"
+            args = build_parser().parse_args([
+                "--action", "decompress",
+                "--input", str(folder_with_archives),
+                "--output", str(out_dir),
+                "--flat",
+                "--quiet",
+            ])
+            res = decompress_archive(args)
+            self.assertEqual(res, 0)
+            self.assertTrue((out_dir / "unique_doc.txt").is_file())
+            self.assertEqual((out_dir / "unique_doc.txt").read_bytes(), b"Contenu direct")
 
 
 class FolderWeightToolTests(unittest.TestCase):

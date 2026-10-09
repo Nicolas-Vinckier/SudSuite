@@ -1,7 +1,7 @@
 """Module filesystem : manipulation sécurisée et unifiée des fichiers et dossiers."""
 
 from .atomic import atomic_write_json, atomic_write_text
-from .collector import collect_files, collect_target_files
+from .collector import collect_files, collect_target_files, find_archive_files
 from .constants import DEFAULT_IGNORED_DIRECTORIES, EXCLUDE_PATTERNS, IGNORED_DIRECTORY_NAMES
 from .paths import (
     archive_base_name,
@@ -33,6 +33,7 @@ __all__ = [
     "collect_files",
     "collect_target_files",
     "detect_archive_format",
+    "find_archive_files",
     "make_staging_folder",
     "paths_overlap",
     "quarantine_files",

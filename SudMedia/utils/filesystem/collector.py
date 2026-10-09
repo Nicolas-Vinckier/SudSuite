@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from .constants import IGNORED_DIRECTORY_NAMES
-from .paths import clean_input_path
+from .paths import clean_input_path, detect_archive_format
 from .scanner import walk_filtered
 
 
@@ -114,3 +114,51 @@ def collect_files(
                 add(Path(root) / filename)
 
     return files
+
+
+def find_archive_files(
+    target_path: str | os.PathLike[str],
+    *,
+    recursive: bool = False,
+    ignored_directories: Iterable[str] = IGNORED_DIRECTORY_NAMES,
+) -> list[Path]:
+    """Trouve tous les fichiers d'archive supportés (.zip, .tar.xz, .txz)."""
+    cleaned = clean_input_path(os.fspath(target_path))
+    if not cleaned:
+        return []
+    path = Path(cleaned).expanduser().resolve()
+    if path.is_file():
+        try:
+            detect_archive_format(path)
+            return [path]
+        except ValueError:
+            return []
+    if not path.is_dir():
+        return []
+
+    accepted_suffixes = (".zip", ".tar.xz", ".txz")
+    archives: list[Path] = []
+    ignored = set(ignored_directories)
+
+    if recursive:
+        for root, directories, filenames in os.walk(path, followlinks=False):
+            directories[:] = sorted(
+                name
+                for name in directories
+                if name not in ignored and not name.startswith((".", "__"))
+            )
+            for filename in sorted(filenames):
+                lower = filename.lower()
+                if any(lower.endswith(ext) for ext in accepted_suffixes):
+                    archives.append((Path(root) / filename).resolve())
+    else:
+        try:
+            for item in sorted(path.iterdir()):
+                if item.is_file():
+                    lower = item.name.lower()
+                    if any(lower.endswith(ext) for ext in accepted_suffixes):
+                        archives.append(item.resolve())
+        except OSError:
+            pass
+
+    return archives

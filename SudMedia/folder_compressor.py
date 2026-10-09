@@ -66,12 +66,14 @@ from SudMedia.utils.filesystem import (
     archive_base_name,
     clean_input_path,
     detect_archive_format,
+    find_archive_files,
     make_staging_folder,
     remove_output_from_entries,
     resolve_archive_output_path,
     resolve_extraction_paths,
     safe_member_path,
     scan_folder,
+    unique_path,
 )
 from SudMedia.utils.metrics import analyze_size_change, format_size
 from SudMedia.utils.progress import (
@@ -99,72 +101,327 @@ def _resolved_input_path(raw_path):
     return (path if path.is_absolute() else Path.cwd() / path).resolve()
 
 
+def _extract_staging_to_destination(
+    staging_folder: Path, final_folder: Path, create_subfolder: bool = True
+):
+    """Déplace le contenu du dossier d'étape vers la destination finale."""
+    if create_subfolder:
+        staging_folder.replace(final_folder)
+    else:
+        final_folder.mkdir(parents=True, exist_ok=True)
+        for item in staging_folder.iterdir():
+            dest_item = final_folder / item.name
+            if dest_item.exists():
+                if dest_item.is_dir() and item.is_dir():
+                    shutil.copytree(item, dest_item, dirs_exist_ok=True)
+                    shutil.rmtree(item, ignore_errors=True)
+                    continue
+                elif dest_item.is_file():
+                    dest_item.unlink()
+            shutil.move(str(item), str(dest_item))
+        shutil.rmtree(staging_folder, ignore_errors=True)
+
+
+def decompress_single_archive(
+    archive_path: Path,
+    destination_input: str | None = None,
+    tools: Toolchain | None = None,
+    cli_args=None,
+    create_subfolder: bool = True,
+    quiet: bool = False,
+    show_header: bool = True,
+    show_footer: bool = True,
+) -> tuple[str, int | None, int | None, Path]:
+    """Décompresse une archive individuelle vers sa destination."""
+    archive_format = detect_archive_format(archive_path)
+    requested_threads, effective_threads = parse_threads(
+        getattr(cli_args, "threads", "auto")
+    )
+    if tools is None:
+        tools = detect_toolchain(cli_args)
+
+    destination_root, final_folder = resolve_extraction_paths(
+        archive_path, destination_input, create_subfolder=create_subfolder
+    )
+    if create_subfolder and final_folder.exists():
+        final_folder = unique_path(final_folder)
+
+    staging_folder = make_staging_folder(
+        destination_root, final_folder, allow_existing_final=not create_subfolder
+    )
+
+    if show_header:
+        print("\n" + "=" * 60)
+        print("DECOMPRESSION")
+        print("=" * 60)
+        print(f"[Source] {archive_path}")
+        print(f"[Destination] {final_folder}")
+        print(f"[Format] {archive_format.upper()}")
+        print(
+            f"[Threads] {'auto' if requested_threads == 0 else requested_threads} (CPU logique : {effective_threads})"
+        )
+
+    started_at = time.perf_counter()
+    try:
+        used_backend, file_count, total_size = execute_extraction(
+            archive_format,
+            archive_path,
+            staging_folder,
+            tools,
+            getattr(cli_args, "engine", "auto"),
+            requested_threads,
+            effective_threads,
+            quiet=quiet,
+        )
+        _extract_staging_to_destination(
+            staging_folder, final_folder, create_subfolder=create_subfolder
+        )
+        elapsed = time.perf_counter() - started_at
+
+        if show_footer:
+            print("\n" + "=" * 60)
+            print("DECOMPRESSION TERMINEE")
+            print("=" * 60)
+            print(f"Moteur             : {describe_backend(used_backend)}")
+            print(f"Temps total         : {elapsed:.2f} s")
+            if total_size is not None:
+                print(f"Taille extraite     : {format_size(total_size)}")
+            if file_count is not None:
+                print(f"Fichiers            : {file_count}")
+            print(f"Emplacement         : {final_folder}")
+            print("=" * 60)
+        return used_backend, file_count, total_size, final_folder
+    except Exception:
+        shutil.rmtree(staging_folder, ignore_errors=True)
+        raise
+
+
+def decompress_folder_archives(
+    target_folder: Path,
+    archives: list[Path],
+    destination_input: str | None = None,
+    tools: Toolchain | None = None,
+    cli_args=None,
+    create_subfolder: bool = True,
+    quiet: bool = False,
+) -> int:
+    """Décompresse toutes les archives d'un dossier par lot."""
+    requested_threads, effective_threads = parse_threads(
+        getattr(cli_args, "threads", "auto")
+    )
+    if tools is None:
+        tools = detect_toolchain(cli_args)
+
+    if destination_input:
+        dest_root = Path(destination_input).expanduser()
+        if not dest_root.is_absolute():
+            dest_root = Path.cwd() / dest_root
+    else:
+        dest_root = target_folder
+
+    dest_root = dest_root.resolve()
+    dest_root.mkdir(parents=True, exist_ok=True)
+
+    if not quiet:
+        print("\n" + "=" * 60)
+        print("DECOMPRESSION PAR LOT")
+        print("=" * 60)
+        print(f"[Dossier source] {target_folder}")
+        print(f"[Archives trouvees] {len(archives)}")
+        print(f"[Destination] {dest_root}")
+        print(
+            f"[Organisation] {'Sous-dossier dedie par archive' if create_subfolder else 'Directement dans la destination'}"
+        )
+        print(
+            f"[Threads] {'auto' if requested_threads == 0 else requested_threads} (CPU logique : {effective_threads})"
+        )
+        print("=" * 60)
+
+    total_extracted_size = 0
+    total_files_count = 0
+    successes = []
+    failures = []
+    batch_start = time.perf_counter()
+
+    for idx, archive_path in enumerate(archives, start=1):
+        if not quiet:
+            print(f"\n[{idx}/{len(archives)}] Archive : {archive_path.name}")
+        arch_start = time.perf_counter()
+        try:
+            used_backend, file_count, total_size, final_folder = (
+                decompress_single_archive(
+                    archive_path,
+                    destination_input=str(dest_root),
+                    tools=tools,
+                    cli_args=cli_args,
+                    create_subfolder=create_subfolder,
+                    quiet=quiet,
+                    show_header=False,
+                    show_footer=False,
+                )
+            )
+            arch_elapsed = time.perf_counter() - arch_start
+            if total_size is not None:
+                total_extracted_size += total_size
+            if file_count is not None:
+                total_files_count += file_count
+            successes.append(
+                (archive_path, final_folder, arch_elapsed, total_size)
+            )
+            if not quiet:
+                size_label = (
+                    f" ({format_size(total_size)})" if total_size is not None else ""
+                )
+                print(
+                    f"  -> Reussie en {arch_elapsed:.2f} s{size_label} -> {final_folder}"
+                )
+        except KeyboardInterrupt:
+            if not quiet:
+                print(
+                    f"\n[Interruption] Operation annulee par l'utilisateur pendant '{archive_path.name}'."
+                )
+            return 130
+        except Exception as exc:
+            failures.append((archive_path, str(exc)))
+            if not quiet:
+                print(f"  -> Echec : {exc}")
+
+    total_batch_time = time.perf_counter() - batch_start
+    if not quiet:
+        print("\n" + "=" * 60)
+        print("BILAN DE LA DECOMPRESSION PAR LOT")
+        print("=" * 60)
+        print(f"Archives traitees   : {len(archives)}")
+        print(f"Succes              : {len(successes)}")
+        print(f"Echecs              : {len(failures)}")
+        print(f"Fichiers extraits   : {total_files_count}")
+        print(f"Taille totale       : {format_size(total_extracted_size)}")
+        print(f"Temps total         : {total_batch_time:.2f} s")
+        print(f"Dossier destination : {dest_root}")
+        if failures:
+            print("\nDetails des echecs :")
+            for arch, err in failures:
+                print(f"  - {arch.name} : {err}")
+        print("=" * 60)
+    return 0 if not failures else 1
+
+
 def decompress_archive(cli_args=None):
     configure_console_output()
     quiet = bool(getattr(cli_args, "quiet", False))
-    raw_input = cli_args.input if cli_args and cli_args.input else input(
-        "📦 Archive a decompresser (.zip ou .tar.xz) : "
+    raw_input = (
+        cli_args.input
+        if cli_args and cli_args.input
+        else input(
+            "📦 Archive ou dossier d'archives a decompresser (.zip, .tar.xz ou dossier) : "
+        )
     )
-    archive_path = _resolved_input_path(raw_input)
-    if not archive_path.is_file():
-        print(f"[Erreur] '{archive_path}' n'est pas une archive valide.")
+    input_path = _resolved_input_path(raw_input)
+    if not input_path.exists():
+        print(f"[Erreur] '{input_path}' n'existe pas.")
         return 2
+
+    requested_threads, effective_threads = parse_threads(
+        getattr(cli_args, "threads", "auto")
+    )
+    tools = detect_toolchain(cli_args)
+    if getattr(cli_args, "diagnostic", False):
+        print_diagnostics(tools, requested_threads, effective_threads)
+
+    # Cas 1 : Dossier d'archives
+    if input_path.is_dir():
+        recursive = getattr(cli_args, "recursive", False)
+        archives = find_archive_files(input_path, recursive=recursive)
+        if not archives and not recursive and not (cli_args and cli_args.input):
+            sub_choice = (
+                input(
+                    "Aucune archive au 1er niveau. Rechercher recursivement dans les sous-dossiers ? (o/N) : "
+                )
+                .strip()
+                .lower()
+            )
+            if sub_choice in {"o", "oui", "y", "yes"}:
+                archives = find_archive_files(input_path, recursive=True)
+
+        if not archives:
+            if not quiet:
+                print(
+                    f"[Info] Aucune archive (.zip, .tar.xz, .txz) trouvee dans '{input_path}'."
+                )
+            return 0
+
+        if not quiet:
+            print(
+                f"[Analyse] {len(archives)} archive(s) detectee(s) dans le dossier."
+            )
+        if cli_args and cli_args.output is not None:
+            destination_input = clean_input_path(cli_args.output)
+        else:
+            destination_input = clean_input_path(
+                input(
+                    "Dossier parent de destination (Entree = dans le dossier des archives) : "
+                )
+            )
+
+        if getattr(cli_args, "no_subfolder", False):
+            create_subfolder = False
+        elif not (cli_args and cli_args.input):
+            subfolder_choice = (
+                input(
+                    "Creer un sous-dossier pour chaque archive ? (O/n, defaut = O) : "
+                )
+                .strip()
+                .lower()
+            )
+            create_subfolder = subfolder_choice not in {"n", "non", "no"}
+        else:
+            create_subfolder = True
+
+        return decompress_folder_archives(
+            input_path,
+            archives,
+            destination_input=destination_input,
+            tools=tools,
+            cli_args=cli_args,
+            create_subfolder=create_subfolder,
+            quiet=quiet,
+        )
+
+    # Cas 2 : Fichier archive unique
     try:
-        archive_format = detect_archive_format(archive_path)
-        requested_threads, effective_threads = parse_threads(getattr(cli_args, "threads", "auto"))
+        detect_archive_format(input_path)
     except ValueError as exc:
         print(f"[Erreur] {exc}")
         return 2
 
-    tools = detect_toolchain(cli_args)
-    if getattr(cli_args, "diagnostic", False):
-        print_diagnostics(tools, requested_threads, effective_threads)
     if cli_args and cli_args.output is not None:
         destination_input = clean_input_path(cli_args.output)
     else:
-        destination_input = clean_input_path(input(
-            "Dossier parent de destination (Entree = a cote de l'archive) : "
-        ))
-    try:
-        destination_root, final_folder = resolve_extraction_paths(archive_path, destination_input)
-        staging_folder = make_staging_folder(destination_root, final_folder)
-    except Exception as exc:
-        print(f"[Erreur] Impossible de preparer la destination : {exc}")
-        return 2
-
-    print("\n" + "=" * 60)
-    print("DECOMPRESSION")
-    print("=" * 60)
-    print(f"[Source] {archive_path}")
-    print(f"[Destination] {final_folder}")
-    print(f"[Format] {archive_format.upper()}")
-    print(f"[Threads] {'auto' if requested_threads == 0 else requested_threads} (CPU logique : {effective_threads})")
-    started_at = time.perf_counter()
-    try:
-        used_backend, file_count, total_size = execute_extraction(
-            archive_format, archive_path, staging_folder, tools,
-            getattr(cli_args, "engine", "auto"), requested_threads,
-            effective_threads, quiet=quiet,
+        destination_input = clean_input_path(
+            input(
+                "Dossier parent de destination (Entree = a cote de l'archive) : "
+            )
         )
-        staging_folder.replace(final_folder)
-        print("\n" + "=" * 60)
-        print("DECOMPRESSION TERMINEE")
-        print("=" * 60)
-        print(f"Moteur             : {describe_backend(used_backend)}")
-        print(f"Temps total         : {time.perf_counter() - started_at:.2f} s")
-        if total_size is not None:
-            print(f"Taille extraite     : {format_size(total_size)}")
-        if file_count is not None:
-            print(f"Fichiers            : {file_count}")
-        print(f"Emplacement         : {final_folder}")
-        print("=" * 60)
+
+    create_subfolder = not getattr(cli_args, "no_subfolder", False)
+    try:
+        decompress_single_archive(
+            input_path,
+            destination_input=destination_input,
+            tools=tools,
+            cli_args=cli_args,
+            create_subfolder=create_subfolder,
+            quiet=quiet,
+            show_header=True,
+            show_footer=True,
+        )
         return 0
     except KeyboardInterrupt:
-        shutil.rmtree(staging_folder, ignore_errors=True)
-        print("\n[Interruption] Operation annulee. Extraction partielle supprimee.")
+        print(
+            "\n[Interruption] Operation annulee. Extraction partielle supprimee."
+        )
         return 130
     except Exception as exc:
-        shutil.rmtree(staging_folder, ignore_errors=True)
         print(f"\n[Erreur Fatale] {exc}")
         return 1
 
@@ -328,6 +585,18 @@ def build_parser():
     parser.add_argument("-input", "--input", "--source", "-i")
     parser.add_argument("-mode", "--mode", "-m", choices=["1", "2", "3"])
     parser.add_argument("-output", "--output", "--destination", "-o")
+    parser.add_argument(
+        "-r",
+        "--recursive",
+        action="store_true",
+        help="Rechercher les archives recursivement dans les sous-dossiers.",
+    )
+    parser.add_argument(
+        "--no-subfolder",
+        "--flat",
+        action="store_true",
+        help="Extraire directement dans la destination sans creer de sous-dossier par archive.",
+    )
     parser.add_argument("--threads", default="auto")
     parser.add_argument("--engine", choices=["auto", "external", "python"], default="auto")
     parser.add_argument("--verify", choices=["none", "quick", "full"], default="quick")
@@ -362,10 +631,18 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     action = args.action
     if action is None and args.input:
-        action = "compress"
+        input_path = _resolved_input_path(args.input)
+        if input_path.is_file():
+            try:
+                detect_archive_format(input_path)
+                action = "decompress"
+            except ValueError:
+                action = "compress"
+        else:
+            action = "compress"
     elif action is None:
         print("\n1. Compresser un dossier")
-        print("2. Decompresser une archive")
+        print("2. Decompresser une archive ou un dossier d'archives")
         action = {"1": "compress", "2": "decompress"}.get(
             input("\nVotre choix (1 ou 2) : ").strip()
         )

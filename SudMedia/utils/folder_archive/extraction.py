@@ -185,21 +185,25 @@ def execute_extraction(archive_format, archive_path, destination, tools, engine,
     if archive_format == "zip":
         file_infos, total_size = inspect_zip_for_extraction(archive_path, destination)
         if engine != "python" and tools.sevenzip:
-            print(f"[Moteur] {describe_backend('7zip')}")
+            if not quiet:
+                print(f"[Moteur] {describe_backend('7zip')}")
             extract_zip_7zip(archive_path, destination, len(file_infos), total_size, tools.sevenzip, requested_threads, quiet=quiet)
             return "7zip", len(file_infos), total_size
         if engine == "external":
             raise RuntimeError("7-Zip est requis pour une décompression ZIP externe.")
-        print(f"[Moteur] Python multithread ({effective_threads} workers)")
+        if not quiet:
+            print(f"[Moteur] Python multithread ({effective_threads} workers)")
         extract_zip_python(archive_path, destination, file_infos, total_size, effective_threads, quiet=quiet)
         return "python-multithread", len(file_infos), total_size
 
     if engine != "python" and tools.xz:
-        print(f"[Moteur] {describe_backend('xz')}")
+        if not quiet:
+            print(f"[Moteur] {describe_backend('xz')}")
         file_count, total_size = extract_tar_xz_external_xz(archive_path, destination, tools.xz, requested_threads, quiet=quiet)
         return "xz", file_count, total_size
     if engine != "python" and tools.sevenzip:
-        print(f"[Moteur] {describe_backend('7zip')}")
+        if not quiet:
+            print(f"[Moteur] {describe_backend('7zip')}")
         extract_tar_xz_7zip(archive_path, destination, tools.sevenzip, requested_threads, quiet=quiet)
         return "7zip", None, None
     if engine == "external":

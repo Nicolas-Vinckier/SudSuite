@@ -152,6 +152,7 @@ def resolve_archive_output_path(
 def resolve_extraction_paths(
     archive_path: str | Path,
     destination_input: str | Path | None,
+    create_subfolder: bool = True,
 ) -> tuple[Path, Path]:
     """Renvoie le dossier racine de destination et le dossier cible final."""
     if destination_input:
@@ -163,7 +164,10 @@ def resolve_extraction_paths(
 
     destination_root = destination_root.resolve()
     destination_root.mkdir(parents=True, exist_ok=True)
-    final_folder = destination_root / archive_base_name(archive_path)
+    if create_subfolder:
+        final_folder = destination_root / archive_base_name(archive_path)
+    else:
+        final_folder = destination_root
     return destination_root, final_folder
 
 
@@ -177,9 +181,13 @@ def detect_archive_format(archive_path: str | Path) -> str:
     raise ValueError("Format non pris en charge. Utilisez une archive .zip, .tar.xz ou .txz.")
 
 
-def make_staging_folder(destination_root: Path, final_folder: Path) -> Path:
+def make_staging_folder(
+    destination_root: Path,
+    final_folder: Path,
+    allow_existing_final: bool = False,
+) -> Path:
     """Crée un dossier d'étape temporaire unique pour sécuriser l'extraction."""
-    if final_folder.exists():
+    if not allow_existing_final and final_folder.exists():
         raise FileExistsError(
             f"Le dossier de destination existe déjà : {final_folder}. "
             "Renommez-le, déplacez-le ou choisissez une autre destination."

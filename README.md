@@ -278,17 +278,29 @@ Le menu interactif vous propose 4 options :
 3.  **Trie inversé** : Ramène les fichiers triés vers la source.
 4.  **Full cleaning** : Supprime la config et vide les dossiers source/dest.
 
-### Compresser un dossier (Archivage)
+### Compresser ou Décompresser un dossier / des archives
 
 ```bash
 python folder_compressor.py
 ```
 
-Laissez-vous guider par le menu pour choisir le dossier et le niveau de compression.
-Vous pouvez aussi exclure des éléments de l'archive en ligne de commande :
+Laissez-vous guider par le menu interactif pour compresser un dossier ou décompresser une archive / tout un dossier d'archives.
 
+**Compression en ligne de commande :**
 ```bash
 python folder_compressor.py --input ./mon_dossier --mode 1 --exclude-folder cache,tmp --exclude-file secrets.txt --exclude-extension log
+```
+
+**Décompression en ligne de commande :**
+```bash
+# Décompresser une seule archive
+python folder_compressor.py -d --input ./mon_archive.zip --output ./destination
+
+# Décompresser toutes les archives d'un dossier (crée un sous-dossier par archive par défaut)
+python folder_compressor.py -d --input ./dossier_archives --output ./destination
+
+# Décompresser directement sans créer de sous-dossier par archive
+python folder_compressor.py -d --input ./dossier_archives --output ./destination --flat
 ```
 
 ### Renommer ses fichiers en masse
