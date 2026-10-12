@@ -7,6 +7,7 @@ restent exposes ici pour conserver la compatibilite avec l'ancien module.
 import argparse
 import datetime
 import os
+import shlex
 import shutil
 import sys
 import time
@@ -102,6 +103,24 @@ def print_diagnostics(tools, requested_threads, effective_threads):
 def _resolved_input_path(raw_path):
     path = Path(clean_input_path(raw_path)).expanduser()
     return (path if path.is_absolute() else Path.cwd() / path).resolve()
+
+
+def _split_input_paths(raw_value):
+    """Separe une saisie de chemins glisses-deposes en chemins individuels."""
+    if not raw_value:
+        return []
+    if isinstance(raw_value, (list, tuple)):
+        return [clean_input_path(part) for part in raw_value if clean_input_path(part)]
+    raw_text = str(raw_value)
+    try:
+        parts = shlex.split(raw_text, posix=False)
+    except ValueError:
+        parts = [raw_text]
+    return [clean_input_path(part) for part in parts if clean_input_path(part)]
+
+
+def _resolved_input_paths(raw_value):
+    return [_resolved_input_path(path) for path in _split_input_paths(raw_value)]
 
 
 def check_archive_already_extracted(
@@ -405,7 +424,11 @@ def decompress_archive(cli_args=None):
             "📦 Archive ou dossier d'archives a decompresser (.zip, .tar.xz ou dossier) : "
         )
     )
-    input_path = _resolved_input_path(raw_input)
+    input_paths = _resolved_input_paths(raw_input)
+    if len(input_paths) != 1:
+        print("[Erreur] La decompression accepte une seule archive ou un seul dossier d'archives.")
+        return 2
+    input_path = input_paths[0]
     if not input_path.exists():
         print(f"[Erreur] '{input_path}' n'existe pas.")
         return 2
@@ -532,40 +555,77 @@ def _split_exclusion_values(values):
     return normalized
 
 
-def compress_folder(cli_args=None):
-    configure_console_output()
-    print("\n        SUDMEDIA FOLDER COMPRESSOR - FAST ENGINE\n")
-    quiet = bool(getattr(cli_args, "quiet", False))
-    target_folder = clean_input_path(
-        cli_args.input if cli_args and cli_args.input else input(
-            "📂 Dossier a compresser (glissez-deposez ou nom) : "
-        )
-    )
-    if not os.path.isdir(target_folder):
-        print(f"[Erreur] '{target_folder}' n'est pas un dossier valide.")
-        return 2
-    target_folder = str(Path(target_folder).resolve())
-    folder_name = os.path.basename(os.path.normpath(target_folder))
-    try:
-        requested_threads, effective_threads = parse_threads(getattr(cli_args, "threads", "auto"))
-    except ValueError as exc:
-        print(f"[Erreur] {exc}")
-        return 2
+def _unique_folder_archive_roots(folders):
+    """Attribue un nom racine unique a chaque dossier dans une archive commune."""
+    counts = {}
+    roots = {}
+    for folder in folders:
+        base_name = folder.name or "Dossier"
+        key = base_name.casefold()
+        counts[key] = counts.get(key, 0) + 1
+        roots[folder] = base_name if counts[key] == 1 else f"{base_name}_{counts[key]}"
+    return roots
 
-    tools = detect_toolchain(cli_args)
-    if getattr(cli_args, "diagnostic", False):
-        print_diagnostics(tools, requested_threads, effective_threads)
-    print(f"\n[Analyse] Dossier : {folder_name}")
-    exclude_folders = _split_exclusion_values(getattr(cli_args, "exclude_folder", []))
-    exclude_files = _split_exclusion_values(getattr(cli_args, "exclude_file", []))
-    exclude_extensions = _split_exclusion_values(getattr(cli_args, "exclude_extension", []))
-    entries, total_size, skipped = scan_folder(
-        target_folder,
-        quiet=quiet,
-        exclude_folders=exclude_folders,
-        exclude_files=exclude_files,
-        exclude_extensions=exclude_extensions,
-    )
+
+def _scan_compression_targets(
+    target_folders,
+    quiet=False,
+    exclude_folders=None,
+    exclude_files=None,
+    exclude_extensions=None,
+    include_folder_root=False,
+):
+    all_entries = []
+    total_size = 0
+    all_skipped = []
+    archive_roots = _unique_folder_archive_roots(target_folders) if include_folder_root else {}
+
+    for folder in target_folders:
+        entries, folder_size, skipped = scan_folder(
+            folder,
+            quiet=quiet,
+            exclude_folders=exclude_folders,
+            exclude_files=exclude_files,
+            exclude_extensions=exclude_extensions,
+        )
+        if include_folder_root:
+            root_name = archive_roots[folder]
+            entries = [
+                FileEntry(
+                    entry.path,
+                    str(Path(root_name) / entry.arcname),
+                    entry.size,
+                )
+                for entry in entries
+            ]
+        all_entries.extend(entries)
+        total_size += folder_size
+        all_skipped.extend(skipped)
+
+    return all_entries, total_size, all_skipped
+
+
+def _default_archive_filename(label, extension):
+    return f"{label}_Archive_{datetime.datetime.now():%Y%m%d_%H%M%S}{extension}"
+
+
+def _print_compression_analysis(
+    target_folders,
+    entries,
+    total_size,
+    skipped,
+    tools,
+    requested_threads,
+    exclude_folders,
+    exclude_files,
+    exclude_extensions,
+):
+    if len(target_folders) == 1:
+        print(f"\n[Analyse] Dossier : {target_folders[0].name}")
+    else:
+        print(f"\n[Analyse] Dossiers : {len(target_folders)}")
+        for folder in target_folders:
+            print(f"  - {folder}")
     print(f"[Analyse] Taille a traiter : {format_size(total_size)} ({len(entries)} fichiers)")
     if exclude_folders or exclude_files or exclude_extensions:
         print("[Analyse] Exclusions personnalisees appliquees :")
@@ -583,35 +643,20 @@ def compress_folder(cli_args=None):
         for path, error in skipped[:5]:
             print(f"  - {path}: {error}")
 
-    mode = cli_args.mode if cli_args and cli_args.mode else None
-    if not mode:
-        print("\n1. CLASSIQUE - ZIP Deflate, priorite vitesse")
-        print("2. MEDIUM    - ZIP BZip2, meilleur gain d'espace")
-        print("3. ULTRA     - TAR.XZ / LZMA2, multithread si possible")
-        mode = input("\nVotre choix (1, 2 ou 3) : ").strip()
-    ext, mode_label = _compression_mode(mode)
-    if ext is None:
-        print("[Erreur] Choix invalide.")
-        return 2
 
-    output_filename = f"{folder_name}_Archive_{datetime.datetime.now():%Y%m%d_%H%M%S}{ext}"
-    output_input = clean_input_path(cli_args.output) if cli_args and cli_args.output is not None else clean_input_path(
-        input("Chemin de sortie (Entree = archive a cote du dossier source) : ")
-    )
-    try:
-        output_path = resolve_archive_output_path(
-            output_input, Path(target_folder).resolve().parent, output_filename, ext
-        )
-    except Exception as exc:
-        print(f"[Erreur] Impossible de preparer le chemin de sortie : {exc}")
-        return 2
-
-    entries, removed_size = remove_output_from_entries(entries, output_path)
-    total_size -= removed_size
-    if removed_size:
-        print("[Analyse] Une ancienne archive de sortie situee dans la source a ete exclue.")
-    engine = getattr(cli_args, "engine", "auto")
-    verify_mode = getattr(cli_args, "verify", "quick")
+def _run_compression(
+    mode,
+    mode_label,
+    entries,
+    total_size,
+    target_folder,
+    output_path,
+    tools,
+    requested_threads,
+    quiet=False,
+    engine="auto",
+    verify_mode="quick",
+):
     try:
         backends = select_backend(mode, engine, tools)
     except RuntimeError as exc:
@@ -622,15 +667,25 @@ def compress_folder(cli_args=None):
     print(f"COMPRESSION {mode_label.upper()}")
     print("=" * 60)
     print(f"[Sortie] {output_path}")
-    print(f"[Threads] {'auto' if requested_threads == 0 else requested_threads} (CPU logique : {effective_threads})")
+    print(
+        f"[Threads] {'auto' if requested_threads == 0 else requested_threads} "
+        f"(CPU logique : {max(1, os.cpu_count() or 1)})"
+    )
     print(f"[Strategie] {' -> '.join(describe_backend(backend) for backend in backends)}")
     print(f"[Verification] {verify_mode}")
     global_start = time.perf_counter()
     try:
         compression_start = time.perf_counter()
         used_backend = execute_compression(
-            mode, backends, entries, total_size, target_folder,
-            output_path, tools, requested_threads, quiet=quiet,
+            mode,
+            backends,
+            entries,
+            total_size,
+            target_folder,
+            output_path,
+            tools,
+            requested_threads,
+            quiet=quiet,
         )
         compression_elapsed = time.perf_counter() - compression_start
         if not os.path.isfile(output_path):
@@ -664,6 +719,231 @@ def compress_folder(cli_args=None):
         return 1
 
 
+def _compress_one_archive(
+    target_folders,
+    mode,
+    mode_label,
+    ext,
+    output_input,
+    tools,
+    requested_threads,
+    quiet,
+    exclude_folders,
+    exclude_files,
+    exclude_extensions,
+    engine,
+    verify_mode,
+):
+    if len(target_folders) > 1 and mode in {"1", "2"} and engine != "python":
+        print("[Info] Archive ZIP multi-dossiers : utilisation du moteur Python pour conserver l'arborescence.")
+        engine = "python"
+    entries, total_size, skipped = _scan_compression_targets(
+        target_folders,
+        quiet=quiet,
+        exclude_folders=exclude_folders,
+        exclude_files=exclude_files,
+        exclude_extensions=exclude_extensions,
+        include_folder_root=len(target_folders) > 1,
+    )
+    _print_compression_analysis(
+        target_folders,
+        entries,
+        total_size,
+        skipped,
+        tools,
+        requested_threads,
+        exclude_folders,
+        exclude_files,
+        exclude_extensions,
+    )
+    label = target_folders[0].name if len(target_folders) == 1 else "Dossiers"
+    output_filename = _default_archive_filename(label, ext)
+    default_output_dir = target_folders[0].parent
+    try:
+        output_path = resolve_archive_output_path(
+            output_input, default_output_dir, output_filename, ext
+        )
+    except Exception as exc:
+        print(f"[Erreur] Impossible de preparer le chemin de sortie : {exc}")
+        return 2
+
+    for folder in target_folders:
+        entries, removed_size = remove_output_from_entries(entries, output_path)
+        total_size -= removed_size
+        if removed_size:
+            print("[Analyse] Une ancienne archive de sortie situee dans la source a ete exclue.")
+
+    return _run_compression(
+        mode,
+        mode_label,
+        entries,
+        total_size,
+        str(target_folders[0].parent),
+        output_path,
+        tools,
+        requested_threads,
+        quiet=quiet,
+        engine=engine,
+        verify_mode=verify_mode,
+    )
+
+
+def _compress_separate_archives(
+    target_folders,
+    mode,
+    mode_label,
+    ext,
+    output_input,
+    tools,
+    requested_threads,
+    quiet,
+    exclude_folders,
+    exclude_files,
+    exclude_extensions,
+    engine,
+    verify_mode,
+):
+    if output_input:
+        output_root = Path(output_input).expanduser()
+        if not output_root.is_absolute():
+            output_root = (Path.cwd() / output_root).resolve()
+        if output_root.exists() and output_root.is_file():
+            print("[Erreur] Pour plusieurs archives separees, choisissez un dossier de sortie.")
+            return 2
+        output_root.mkdir(parents=True, exist_ok=True)
+    else:
+        output_root = None
+
+    failures = 0
+    for index, folder in enumerate(target_folders, start=1):
+        print(f"\n[{index}/{len(target_folders)}] Dossier : {folder}")
+        output_dir = output_root if output_root is not None else folder.parent
+        result = _compress_one_archive(
+            [folder],
+            mode,
+            mode_label,
+            ext,
+            str(output_dir),
+            tools,
+            requested_threads,
+            quiet,
+            exclude_folders,
+            exclude_files,
+            exclude_extensions,
+            engine,
+            verify_mode,
+        )
+        if result == 130:
+            return 130
+        if result != 0:
+            failures += 1
+    return 0 if failures == 0 else 1
+
+
+def compress_folder(cli_args=None):
+    configure_console_output()
+    print("\n        SUDMEDIA FOLDER COMPRESSOR - FAST ENGINE\n")
+    quiet = bool(getattr(cli_args, "quiet", False))
+    raw_input = (
+        cli_args.input
+        if cli_args and cli_args.input
+        else input(
+            "📂 Dossier a compresser (glissez-deposez ou nom) : "
+        )
+    )
+    target_folders = _resolved_input_paths(raw_input)
+    if not target_folders:
+        print("[Erreur] Aucun dossier indique.")
+        return 2
+    invalid_folders = [folder for folder in target_folders if not folder.is_dir()]
+    if invalid_folders:
+        print(f"[Erreur] '{invalid_folders[0]}' n'est pas un dossier valide.")
+        return 2
+
+    try:
+        requested_threads, effective_threads = parse_threads(getattr(cli_args, "threads", "auto"))
+    except ValueError as exc:
+        print(f"[Erreur] {exc}")
+        return 2
+
+    tools = detect_toolchain(cli_args)
+    if getattr(cli_args, "diagnostic", False):
+        print_diagnostics(tools, requested_threads, effective_threads)
+    exclude_folders = _split_exclusion_values(getattr(cli_args, "exclude_folder", []))
+    exclude_files = _split_exclusion_values(getattr(cli_args, "exclude_file", []))
+    exclude_extensions = _split_exclusion_values(getattr(cli_args, "exclude_extension", []))
+
+    mode = cli_args.mode if cli_args and cli_args.mode else None
+    if not mode:
+        print("\n1. CLASSIQUE - ZIP Deflate, priorite vitesse")
+        print("2. MEDIUM    - ZIP BZip2, meilleur gain d'espace")
+        print("3. ULTRA     - TAR.XZ / LZMA2, multithread si possible")
+        mode = input("\nVotre choix (1, 2 ou 3) : ").strip()
+    ext, mode_label = _compression_mode(mode)
+    if ext is None:
+        print("[Erreur] Choix invalide.")
+        return 2
+
+    batch_mode = getattr(cli_args, "batch_archive", None)
+    if len(target_folders) > 1 and not batch_mode:
+        print("\nPlusieurs dossiers detectes :")
+        print("1. Une seule archive contenant tous les dossiers")
+        print("2. Une archive par dossier")
+        batch_mode = {"1": "single", "2": "separate"}.get(
+            input("\nVotre choix (1 ou 2) : ").strip()
+        )
+        if batch_mode is None:
+            print("[Erreur] Choix invalide.")
+            return 2
+    if not batch_mode:
+        batch_mode = "single"
+
+    if cli_args and cli_args.output is not None:
+        output_input = clean_input_path(cli_args.output)
+    else:
+        output_prompt = (
+            "Dossier de sortie (Entree = archives a cote de chaque dossier source) : "
+            if batch_mode == "separate"
+            else "Chemin de sortie (Entree = archive a cote du dossier source) : "
+        )
+        output_input = clean_input_path(input(output_prompt))
+    engine = getattr(cli_args, "engine", "auto")
+    verify_mode = getattr(cli_args, "verify", "quick")
+
+    if batch_mode == "separate":
+        return _compress_separate_archives(
+            target_folders,
+            mode,
+            mode_label,
+            ext,
+            output_input,
+            tools,
+            requested_threads,
+            quiet,
+            exclude_folders,
+            exclude_files,
+            exclude_extensions,
+            engine,
+            verify_mode,
+        )
+
+    return _compress_one_archive(
+        target_folders,
+        mode,
+        mode_label,
+        ext,
+        output_input,
+        tools,
+        requested_threads,
+        quiet,
+        exclude_folders,
+        exclude_files,
+        exclude_extensions,
+        engine,
+        verify_mode,
+    )
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="SudMedia Folder Compressor - compression/decompression multithread"
@@ -671,7 +951,7 @@ def build_parser():
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("-a", "--action", choices=["compress", "decompress"])
     actions.add_argument("-d", "--decompress", dest="action", action="store_const", const="decompress")
-    parser.add_argument("-input", "--input", "--source", "-i")
+    parser.add_argument("-input", "--input", "--source", "-i", nargs="+")
     parser.add_argument("-mode", "--mode", "-m", choices=["1", "2", "3"])
     parser.add_argument("-output", "--output", "--destination", "-o")
     parser.add_argument(
@@ -689,6 +969,11 @@ def build_parser():
     parser.add_argument("--threads", default="auto")
     parser.add_argument("--engine", choices=["auto", "external", "python"], default="auto")
     parser.add_argument("--verify", choices=["none", "quick", "full"], default="quick")
+    parser.add_argument(
+        "--batch-archive",
+        choices=["single", "separate"],
+        help="Avec plusieurs dossiers a compresser : single = une seule archive, separate = une archive par dossier.",
+    )
     parser.add_argument("--sevenzip")
     parser.add_argument("--xz")
     parser.add_argument("--diagnostic", action="store_true")
@@ -720,8 +1005,9 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     action = args.action
     if action is None and args.input:
-        input_path = _resolved_input_path(args.input)
-        if input_path.is_file():
+        input_paths = _resolved_input_paths(args.input)
+        input_path = input_paths[0] if input_paths else Path()
+        if len(input_paths) == 1 and input_path.is_file():
             try:
                 detect_archive_format(input_path)
                 action = "decompress"

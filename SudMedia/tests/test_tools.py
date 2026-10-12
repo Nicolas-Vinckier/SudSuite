@@ -3,6 +3,7 @@ import datetime
 import io
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -17,6 +18,7 @@ from SudMedia.folder_compressor import (
     ExtractionBackendError,
     archive_base_name,
     build_parser,
+    compress_folder,
     compress_zip_python,
     decompress_archive,
     decompress_folder_archives,
@@ -26,6 +28,7 @@ from SudMedia.folder_compressor import (
     inspect_zip_for_extraction,
     safe_member_path,
     scan_folder,
+    _split_input_paths,
 )
 from SudMedia.folder_weight import scan_folder as scan_folder_weights
 from SudMedia.image_renamer import format_timestamp, get_unique_filename
@@ -98,9 +101,108 @@ class ArchiveToolTests(unittest.TestCase):
             ]
         )
 
+        self.assertEqual(args.input, ["source"])
         self.assertEqual(args.exclude_folder, ["cache,tmp"])
         self.assertEqual(args.exclude_file, ["secret.txt"])
         self.assertEqual(args.exclude_extension, ["log"])
+
+    def test_drag_drop_input_can_contain_multiple_quoted_folders(self):
+        raw_input = '"T:\\CLIENTS\\Projet A" "T:\\CLIENTS\\Projet B"'
+
+        self.assertEqual(
+            _split_input_paths(raw_input),
+            ["T:\\CLIENTS\\Projet A", "T:\\CLIENTS\\Projet B"],
+        )
+
+    def test_compress_multiple_folders_into_one_zip(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = root / "Premier dossier"
+            second = root / "Second dossier"
+            output = root / "archives"
+            first.mkdir()
+            second.mkdir()
+            (first / "a.txt").write_bytes(b"A")
+            (second / "b.txt").write_bytes(b"B")
+
+            args = build_parser().parse_args(
+                [
+                    "--action",
+                    "compress",
+                    "--input",
+                    str(first),
+                    str(second),
+                    "--mode",
+                    "1",
+                    "--output",
+                    str(output),
+                    "--engine",
+                    "python",
+                    "--verify",
+                    "none",
+                    "--quiet",
+                    "--batch-archive",
+                    "single",
+                ]
+            )
+            with (
+                mock.patch("SudMedia.folder_compressor.configure_console_output"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                status = compress_folder(args)
+
+            self.assertEqual(status, 0)
+            archives = list(output.glob("Dossiers_Archive_*.zip"))
+            self.assertEqual(len(archives), 1)
+            with zipfile.ZipFile(archives[0]) as archive:
+                self.assertEqual(
+                    sorted(archive.namelist()),
+                    [
+                        "Premier dossier/a.txt",
+                        "Second dossier/b.txt",
+                    ],
+                )
+
+    def test_compress_multiple_folders_into_separate_zips(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = root / "Premier"
+            second = root / "Second"
+            output = root / "archives"
+            first.mkdir()
+            second.mkdir()
+            (first / "a.txt").write_bytes(b"A")
+            (second / "b.txt").write_bytes(b"B")
+
+            args = build_parser().parse_args(
+                [
+                    "--action",
+                    "compress",
+                    "--input",
+                    str(first),
+                    str(second),
+                    "--mode",
+                    "1",
+                    "--output",
+                    str(output),
+                    "--engine",
+                    "python",
+                    "--verify",
+                    "none",
+                    "--quiet",
+                    "--batch-archive",
+                    "separate",
+                ]
+            )
+            with (
+                mock.patch("SudMedia.folder_compressor.configure_console_output"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                status = compress_folder(args)
+
+            self.assertEqual(status, 0)
+            self.assertEqual(len(list(output.glob("Premier_Archive_*.zip"))), 1)
+            self.assertEqual(len(list(output.glob("Second_Archive_*.zip"))), 1)
 
     def test_python_zip_round_trip_preserves_content(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
