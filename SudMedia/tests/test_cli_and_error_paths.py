@@ -16,7 +16,7 @@ except ImportError:
 
 add_project_root()
 
-from SudMedia import excel_to_pdf, sud_duplicate, sud_ocr
+from SudMedia import excel_to_pdf, qr_code_generator, sud_duplicate, sud_ocr
 from SudMedia.utils.office import (
     OfficeConversionError,
     SpreadsheetPdfResult,
@@ -184,6 +184,134 @@ class ExcelToPdfTests(unittest.TestCase):
                 status = excel_to_pdf.main([str(first), str(second), "-o", str(output)])
 
         self.assertEqual(status, 1)
+
+
+class QRCodeGeneratorTests(unittest.TestCase):
+    def test_parser_accepts_advanced_customization(self):
+        args = qr_code_generator.build_parser().parse_args(
+            [
+                "https://sudsuite.local",
+                "--preset",
+                "advanced",
+                "--error-correction",
+                "H",
+                "--version",
+                "7",
+                "--box-size",
+                "16",
+                "--border",
+                "2",
+                "--fill-color",
+                "#102030",
+                "--back-color",
+                "white",
+                "--format",
+                "webp",
+                "--logo",
+                "logo.png",
+                "--logo-ratio",
+                "0.25",
+                "--rounded",
+                "--overwrite",
+            ]
+        )
+
+        config = qr_code_generator.config_from_args(args)
+
+        self.assertEqual(config.data, "https://sudsuite.local")
+        self.assertEqual(config.error_correction, "H")
+        self.assertEqual(config.version, 7)
+        self.assertEqual(config.box_size, 16)
+        self.assertEqual(config.border, 2)
+        self.assertEqual(config.fill_color, "#102030")
+        self.assertEqual(config.output_format, "webp")
+        self.assertEqual(config.logo_ratio, 0.25)
+        self.assertTrue(config.rounded)
+        self.assertTrue(config.allow_overwrite)
+
+    def test_output_extension_drives_format_when_format_is_omitted(self):
+        args = qr_code_generator.build_parser().parse_args(
+            ["texte", "--output", "mon_qr.webp"]
+        )
+
+        config = qr_code_generator.config_from_args(args)
+
+        self.assertEqual(config.output.name, "mon_qr.webp")
+        self.assertEqual(config.output_format, "webp")
+
+    def test_interactive_mode_uses_qr_codes_folder_by_default(self):
+        answers = iter(
+            [
+                "https://sudsuite.local",
+                "1",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        with (
+            mock.patch("builtins.input", side_effect=lambda _prompt="": next(answers)),
+            mock.patch.object(qr_code_generator.Path, "cwd", return_value=Path("SudMedia")),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            config = qr_code_generator.interactive_config()
+
+        self.assertEqual(config.output, Path("SudMedia") / "QR_Codes" / "qr_code.png")
+        self.assertEqual(config.error_correction, "M")
+
+    def test_interactive_mode_accepts_numbered_choices_and_clamps_limits(self):
+        answers = iter(
+            [
+                "https://sudsuite.local",
+                "3",
+                "2",
+                "#FF1199",
+                "#88AA6E",
+                "1",
+                "999",
+                "40",
+                "999",
+                "20",
+                "3",
+                "1",
+                "",
+                "1",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        with (
+            mock.patch("builtins.input", side_effect=lambda _prompt="": next(answers)),
+            mock.patch.object(qr_code_generator.Path, "cwd", return_value=Path("SudMedia")),
+            mock.patch.object(qr_code_generator, "_minimum_version_for_data", return_value=8),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            config = qr_code_generator.interactive_config()
+
+        self.assertEqual(config.output_format, "webp")
+        self.assertTrue(config.transparent)
+        self.assertEqual(config.box_size, 40)
+        self.assertEqual(config.border, 20)
+        self.assertEqual(config.error_correction, "Q")
+        self.assertEqual(config.version, 8)
+
+    def test_main_reports_missing_qrcode_dependency_cleanly(self):
+        with (
+            mock.patch.object(qr_code_generator, "configure_console_output"),
+            mock.patch.object(
+                qr_code_generator,
+                "generate_qr_code",
+                side_effect=RuntimeError("La bibliotheque 'qrcode' n'est pas installee."),
+            ),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
+            status = qr_code_generator.main(["payload", "--output", "qr.png"])
+
+        self.assertEqual(status, 2)
+        self.assertIn("qrcode", stdout.getvalue())
 
 
 class ErrorPathTests(unittest.TestCase):

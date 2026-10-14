@@ -198,6 +198,15 @@ Optimise la taille des documents Word `.docx` sans modifier l'original. Le moteu
 - **Références OOXML sécurisées** : mise à jour automatique des fichiers `.rels` et de `[Content_Types].xml` lors d'un changement `.png` → `.jpg`.
 - **Original préservé** : sortie horodatée par défaut et vérification CRC + relations internes après génération.
 
+### 18. 🔳 Sud QR Code (`SudMedia/qr_code_generator.py`)
+
+Crée des QR codes fonctionnels avec un niveau de personnalisation simple ou très avancé.
+
+- **Niveaux de complexité** : préréglages `simple`, `standard` et `advanced`.
+- **Personnalisation fine** : version QR, correction d'erreur, taille des modules, marge, couleurs, transparence, format de sortie et modules arrondis.
+- **Logo central** : insertion optionnelle d'une image avec ratio contrôlé, à utiliser avec une correction d'erreur élevée.
+- **Sorties sûres** : ne remplace pas un fichier existant sauf avec `--overwrite`.
+
 ---
 
 ## 🛠️ Installation
@@ -218,6 +227,10 @@ Optimise la taille des documents Word `.docx` sans modifier l'original. Le moteu
     langues souhaitées (`fra` et/ou `eng`). Les PDF nécessitent aussi
     **PyMuPDF**. Le chemin de Tesseract peut être transmis avec `--tesseract`
     s'il n'est pas dans le PATH.
+6.  Pour `qr_code_generator.py`, installez la bibliothèque QR avec Pillow :
+    ```bash
+    pip install "qrcode[pil]"
+    ```
 
 ### Vérifier SudMedia
 
@@ -468,6 +481,31 @@ python SudMedia/docx_optimizer.py ./documents -o ./documents_optimises
 ```
 
 Le mode intelligent conserve les images transparentes en PNG et ne passe un PNG opaque en JPEG que si l'image semble photographique et que le gain dépasse 10 % par défaut. Le mode agressif baisse ce seuil à 1 % et peut recomprimer les JPEG déjà présents.
+
+### Créer un QR code
+
+```bash
+# Assistant interactif avec choix de personnalisation et dossier de sortie
+python SudMedia/qr_code_generator.py
+
+# Mode standard
+python SudMedia/qr_code_generator.py "https://example.com" -o mon_qr.png
+
+# Mode avancé avec couleurs, logo et correction maximale
+python SudMedia/qr_code_generator.py "https://example.com" ^
+  --preset advanced ^
+  --error-correction H ^
+  --fill-color "#102030" ^
+  --back-color white ^
+  --logo logo.png ^
+  --rounded ^
+  -o mon_qr.png
+```
+
+Pour garder le QR lisible, utilisez un contraste fort et `--error-correction H`
+si vous ajoutez un logo ou des formes arrondies. Sans argument, l'outil demande
+le niveau de personnalisation puis propose `QR_Codes` comme dossier de sortie
+par défaut.
 
 ---
 
