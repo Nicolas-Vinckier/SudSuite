@@ -778,7 +778,7 @@ def _compress_one_archive(
         mode_label,
         entries,
         total_size,
-        str(target_folders[0].parent),
+        str(target_folders[0] if len(target_folders) == 1 else target_folders[0].parent),
         output_path,
         tools,
         requested_threads,

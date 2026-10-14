@@ -1,6 +1,7 @@
 import contextlib
 import datetime
 import io
+import os
 import tempfile
 import unittest
 import zipfile
@@ -28,6 +29,7 @@ from SudMedia.folder_compressor import (
     inspect_zip_for_extraction,
     safe_member_path,
     scan_folder,
+    Toolchain,
     _split_input_paths,
 )
 from SudMedia.folder_weight import scan_folder as scan_folder_weights
@@ -234,6 +236,78 @@ class ArchiveToolTests(unittest.TestCase):
                 (destination / "album" / "photo.txt").read_bytes(),
                 expected,
             )
+
+    def test_python_zip_clamps_timestamps_before_1980(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source"
+            source.mkdir()
+            old_file = source / "old.txt"
+            old_file.write_bytes(b"archive me")
+            old_timestamp = datetime.datetime(1979, 1, 1).timestamp()
+            os.utime(old_file, (old_timestamp, old_timestamp))
+            archive = root / "archive.zip"
+
+            entries, total_size, skipped = scan_folder(source, quiet=True)
+            self.assertEqual(skipped, [])
+            compress_zip_python(entries, total_size, archive, "1", quiet=True)
+
+            with zipfile.ZipFile(archive) as compressed:
+                self.assertEqual(compressed.read("old.txt"), b"archive me")
+                self.assertEqual(compressed.getinfo("old.txt").date_time[:3], (1980, 1, 1))
+
+    def test_single_folder_external_compression_runs_from_source_folder(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "NV"
+            source.mkdir()
+            (source / "Administratif").mkdir()
+            (source / "Administratif" / "doc.txt").write_bytes(b"doc")
+            output = root / "archives"
+            captured = {}
+
+            def fake_execute_compression(
+                mode,
+                backends,
+                entries,
+                total_size,
+                target_folder,
+                output_path,
+                tools,
+                requested_threads,
+                quiet=False,
+            ):
+                captured["target_folder"] = Path(target_folder)
+                Path(output_path).write_bytes(b"fake zip")
+                return "7zip"
+
+            args = build_parser().parse_args(
+                [
+                    "--action",
+                    "compress",
+                    "--input",
+                    str(source),
+                    "--mode",
+                    "1",
+                    "--output",
+                    str(output),
+                    "--engine",
+                    "external",
+                    "--verify",
+                    "none",
+                    "--quiet",
+                ]
+            )
+            with (
+                mock.patch("SudMedia.folder_compressor.configure_console_output"),
+                mock.patch("SudMedia.folder_compressor.detect_toolchain", return_value=Toolchain(sevenzip="7z")),
+                mock.patch("SudMedia.folder_compressor.execute_compression", side_effect=fake_execute_compression),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                status = compress_folder(args)
+
+            self.assertEqual(status, 0)
+            self.assertEqual(captured["target_folder"], source)
 
     def test_find_archive_files_detects_archives(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

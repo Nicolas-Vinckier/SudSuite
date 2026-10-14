@@ -145,7 +145,17 @@ Un outil d'automatisation puissant pour surveiller et mettre à jour (pull) plus
 - **Sécurité & Visibilité** : Affichage thread-safe et en tableau pour une gestion claire des dépôts. Aucune opération de `push` automatique.
 - **Bilan Global** : Statut précis pour chaque dépôt (À jour, Mis à jour, Erreur) et affichage de la durée totale.
 
-### 13. 🧬 Sud Duplicate (`SudMedia/sud_duplicate.py`)
+### 13. 🔄 SudFolder Sync (`SudGit/sud_folder_sync.py`)
+
+Synchronise deux répertoires en bidirectionnel, par exemple un lecteur réseau `U:\` avec un disque secondaire `D:\Sauvegarde`.
+
+- **Comparaison metadata** : se base sur la date de création, la date de modification et la taille du fichier.
+- **Bidirectionnel** : copie les fichiers absents dans l'autre dossier et remplace la version la moins récente.
+- **Mode unique ou live** : exécution ponctuelle ou boucle avec intervalle configurable (`30s`, `60s`, etc.).
+- **Scan léger** : le mode live vérifie d'abord une signature metadata rapide pour éviter les copies inutiles.
+- **Sécurité** : ne propage pas les suppressions automatiquement et signale les conflits ambigus.
+
+### 14. 🧬 Sud Duplicate (`SudMedia/sud_duplicate.py`)
 
 Détecte les fichiers strictement identiques et, sur demande, les images
 visuellement similaires.
@@ -157,7 +167,7 @@ visuellement similaires.
 - **Restauration possible** : Chaque quarantaine contient un manifeste indiquant
   l'origine et la destination de tous les fichiers déplacés.
 
-### 14. 🛡️ Sud Integrity (`SudSecurity/sud_integrity.py`)
+### 15. 🛡️ Sud Integrity (`SudSecurity/sud_integrity.py`)
 
 Crée puis vérifie un manifeste d'intégrité pour un dossier important.
 
@@ -167,7 +177,7 @@ Crée puis vérifie un manifeste d'intégrité pour un dossier important.
 - **Protection des chemins** : Refuse les entrées qui tentent de sortir du
   dossier contrôlé.
 
-### 15. 🔤 Sud OCR (`SudMedia/sud_ocr.py`)
+### 16. 🔤 Sud OCR (`SudMedia/sud_ocr.py`)
 
 Extrait le texte des images et des PDF dans des fichiers UTF-8.
 
@@ -177,7 +187,7 @@ Extrait le texte des images et des PDF dans des fichiers UTF-8.
 - **Tolérance aux erreurs** : Un document illisible n'arrête pas le reste du lot.
 - **Sorties isolées** : Un fichier texte paginé est créé pour chaque document.
 
-### 16. 📦 Sud DOCX Optimizer (`SudMedia/docx_optimizer.py`)
+### 17. 📦 Sud DOCX Optimizer (`SudMedia/docx_optimizer.py`)
 
 Optimise la taille des documents Word `.docx` sans modifier l'original. Le moteur travaille directement sur le package OOXML et vérifie son intégrité après traitement.
 
@@ -376,6 +386,37 @@ python SudGit/sud_git_sync.py
 1.  Lancez le script via votre terminal.
 2.  Dans le menu Principal, allez dans la configuration (choix `3`) pour ajouter vos dossiers Git et régler le parallélisme.
 3.  Revenez au menu principal et lancez la GitSync (choix `1`) pour tout mettre à jour en parallèle.
+
+### Synchroniser deux dossiers
+
+```bash
+# Mode interactif
+python SudGit/sud_folder_sync.py
+
+# Lancement unique
+python SudGit/sud_folder_sync.py "U:\\" "D:\\Sauvegarde_U" --once
+
+# Mode live toutes les 30 secondes
+python SudGit/sud_folder_sync.py "U:\\" "D:\\Sauvegarde_U" --live --interval 30
+
+# Mode test sans copie
+python SudGit/sud_folder_sync.py "U:\\" "D:\\Sauvegarde_U" --once --test
+
+# Mode live avec propagation des suppressions connues
+python SudGit/sud_folder_sync.py "U:\\" "D:\\Sauvegarde_U" --live --interval 30 --delete
+```
+
+Le script compare les métadonnées des fichiers (`création`, `modification`,
+`taille`) et copie la version la plus récente vers l'autre dossier. Les
+suppressions ne sont propagées que si `--delete` est fourni. Cette option se
+base sur un état local de la paire de dossiers : lancez d'abord une synchro
+normale pour initialiser cet état, puis utilisez `--delete` pour que les
+suppressions futures soient répercutées de l'autre côté. Testez avec
+`--delete --test` avant de l'activer en réel. Sous Windows, la date de création
+n'est pas toujours restaurable lors d'une copie ; la date de modification reste
+donc le critère principal pour éviter les recopies en boucle. Le mode `--test`
+(`--dry-run`) fait le scan complet et affiche les modifications prévues sans
+écrire dans les dossiers.
 
 ### Rechercher les doublons
 

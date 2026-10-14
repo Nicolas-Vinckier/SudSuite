@@ -59,7 +59,7 @@ def compress_zip_python(entries, total_size, output_path, mode, quiet=False):
     try:
         with zipfile.ZipFile(output_path, "w", compression=compression, compresslevel=level, allowZip64=True) as archive:
             for entry in entries:
-                info = zipfile.ZipInfo.from_file(entry.path, entry.arcname)
+                info = zipfile.ZipInfo.from_file(entry.path, entry.arcname, strict_timestamps=False)
                 info.compress_type = compression
                 info._compresslevel = level
                 with open(entry.path, "rb", buffering=BUFFER_SIZE) as source:

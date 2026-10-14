@@ -98,13 +98,14 @@ def safe_unlink(path):
 def decode_external_output(data):
     if isinstance(data, str):
         return data
-    encodings = ["utf-8"]
+    encodings = []
     if os.name == "nt":
         encodings.extend(["oem", locale.getpreferredencoding(False), "mbcs"])
+    encodings.append("utf-8")
     for encoding in encodings:
         try:
             return data.decode(encoding)
-        except (LookupError, UnicodeEncodeError):
+        except (LookupError, UnicodeDecodeError):
             continue
     return data.decode("utf-8", errors="replace")
 
