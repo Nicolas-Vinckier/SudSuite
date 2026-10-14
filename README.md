@@ -417,6 +417,9 @@ python SudGit/sud_folder_sync.py "U:\\" "D:\\Sauvegarde_U" --once --test
 
 # Mode live avec propagation des suppressions connues
 python SudGit/sud_folder_sync.py "U:\\" "D:\\Sauvegarde_U" --live --interval 30 --delete
+
+# Mode live compact sur une ligne, sans empiler les passages
+python SudGit/sud_folder_sync.py "U:\\" "D:\\Sauvegarde_U" --live --interval 30 --compact
 ```
 
 Le script compare les métadonnées des fichiers (`création`, `modification`,
@@ -429,7 +432,9 @@ suppressions futures soient répercutées de l'autre côté. Testez avec
 n'est pas toujours restaurable lors d'une copie ; la date de modification reste
 donc le critère principal pour éviter les recopies en boucle. Le mode `--test`
 (`--dry-run`) fait le scan complet et affiche les modifications prévues sans
-écrire dans les dossiers.
+écrire dans les dossiers. En mode live, `--compact` rafraîchit une seule ligne
+de statut avec le nombre de passages, le dernier bilan, le cumul de la session
+et le temps restant avant le prochain passage.
 
 ### Rechercher les doublons
 

@@ -71,13 +71,51 @@ class SyncStats:
     conflicts: int = 0
     errors: int = 0
 
+    @property
+    def changes(self):
+        return (
+            self.copied_left_to_right
+            + self.copied_right_to_left
+            + self.deleted_left
+            + self.deleted_right
+        )
+
 
 def safe_print(msg="", end="\n"):
     try:
-        print(msg, end=end)
+        print(msg, end=end, flush=True)
     except UnicodeEncodeError:
         clean_msg = str(msg).encode("ascii", "ignore").decode("ascii")
-        print(clean_msg, end=end)
+        print(clean_msg, end=end, flush=True)
+
+
+class CompactRenderer:
+    def __init__(self):
+        self.line_length = 0
+        self.width = shutil.get_terminal_size((100, 24)).columns
+
+    def render(self, line):
+        width = shutil.get_terminal_size((self.width, 24)).columns
+        self.width = max(20, width)
+        clean_line = line.replace("\n", " ")
+        visible = clean_line[: self.width - 1]
+        padding = max(0, self.line_length - len(visible))
+        safe_print("\r" + visible + (" " * padding), end="")
+        self.line_length = len(visible)
+
+    def close(self):
+        if self.line_length:
+            safe_print("")
+
+
+def add_stats(total, current):
+    total.copied_left_to_right += current.copied_left_to_right
+    total.copied_right_to_left += current.copied_right_to_left
+    total.deleted_left += current.deleted_left
+    total.deleted_right += current.deleted_right
+    total.unchanged += current.unchanged
+    total.conflicts += current.conflicts
+    total.errors += current.errors
 
 
 def afficher_en_tete():
@@ -267,11 +305,13 @@ def sync_once(
     prefer="newer",
     dry_run=False,
     propagate_deletes=False,
+    verbose=True,
 ):
     stats = SyncStats()
-    safe_print(f"{E['SEARCH']} Scan metadata :")
-    safe_print(f"   Gauche : {left_root}")
-    safe_print(f"   Droite : {right_root}")
+    if verbose:
+        safe_print(f"{E['SEARCH']} Scan metadata :")
+        safe_print(f"   Gauche : {left_root}")
+        safe_print(f"   Droite : {right_root}")
 
     left_files = scan_folder(left_root, excluded_dirs)
     right_files = scan_folder(right_root, excluded_dirs)
@@ -288,23 +328,27 @@ def sync_once(
             if left_info and not right_info:
                 if propagate_deletes and str(relative_path) in previous_state:
                     prefix = E["TEST"] if dry_run else E["WARN"]
-                    safe_print(f"{prefix} Suppression propagée sur gauche : {relative_path}")
+                    if verbose:
+                        safe_print(f"{prefix} Suppression propagée sur gauche : {relative_path}")
                     delete_file(left_path, left_root, dry_run=dry_run)
                     stats.deleted_left += 1
                 else:
                     prefix = E["TEST"] if dry_run else E["COPY"]
-                    safe_print(f"{prefix} Gauche -> Droite : {relative_path}")
+                    if verbose:
+                        safe_print(f"{prefix} Gauche -> Droite : {relative_path}")
                     copy_file(left_path, right_path, dry_run=dry_run)
                     stats.copied_left_to_right += 1
             elif right_info and not left_info:
                 if propagate_deletes and str(relative_path) in previous_state:
                     prefix = E["TEST"] if dry_run else E["WARN"]
-                    safe_print(f"{prefix} Suppression propagée sur droite : {relative_path}")
+                    if verbose:
+                        safe_print(f"{prefix} Suppression propagée sur droite : {relative_path}")
                     delete_file(right_path, right_root, dry_run=dry_run)
                     stats.deleted_right += 1
                 else:
                     prefix = E["TEST"] if dry_run else E["COPY"]
-                    safe_print(f"{prefix} Droite -> Gauche : {relative_path}")
+                    if verbose:
+                        safe_print(f"{prefix} Droite -> Gauche : {relative_path}")
                     copy_file(right_path, left_path, dry_run=dry_run)
                     stats.copied_right_to_left += 1
             elif left_info and right_info:
@@ -313,21 +357,25 @@ def sync_once(
                     stats.unchanged += 1
                 elif source_side == "left":
                     prefix = E["TEST"] if dry_run else E["SYNC"]
-                    safe_print(f"{prefix} Plus récent gauche -> droite : {relative_path}")
+                    if verbose:
+                        safe_print(f"{prefix} Plus récent gauche -> droite : {relative_path}")
                     copy_file(left_path, right_path, dry_run=dry_run)
                     stats.copied_left_to_right += 1
                 elif source_side == "right":
                     prefix = E["TEST"] if dry_run else E["SYNC"]
-                    safe_print(f"{prefix} Plus récent droite -> gauche : {relative_path}")
+                    if verbose:
+                        safe_print(f"{prefix} Plus récent droite -> gauche : {relative_path}")
                     copy_file(right_path, left_path, dry_run=dry_run)
                     stats.copied_right_to_left += 1
                 else:
-                    safe_print(
-                        f"{E['WARN']}  Conflit ignoré (dates identiques, contenu metadata différent) : {relative_path}"
-                    )
+                    if verbose:
+                        safe_print(
+                            f"{E['WARN']}  Conflit ignoré (dates identiques, contenu metadata différent) : {relative_path}"
+                        )
                     stats.conflicts += 1
         except OSError as exc:
-            safe_print(f"{E['ERROR']} Erreur sur {relative_path} : {exc}")
+            if verbose:
+                safe_print(f"{E['ERROR']} Erreur sur {relative_path} : {exc}")
             stats.errors += 1
 
     if dry_run:
@@ -356,7 +404,15 @@ def print_stats(stats, elapsed):
     safe_print("=" * 52)
 
 
-def run_once(left_root, right_root, excluded_dirs, prefer, dry_run, propagate_deletes):
+def run_once(
+    left_root,
+    right_root,
+    excluded_dirs,
+    prefer,
+    dry_run,
+    propagate_deletes,
+    verbose=True,
+):
     started = time.time()
     stats = sync_once(
         left_root,
@@ -365,9 +421,31 @@ def run_once(left_root, right_root, excluded_dirs, prefer, dry_run, propagate_de
         prefer,
         dry_run,
         propagate_deletes,
+        verbose,
     )
-    print_stats(stats, time.time() - started)
+    elapsed = time.time() - started
+    if verbose:
+        print_stats(stats, elapsed)
     return stats
+
+
+def compact_status_line(
+    iteration,
+    last_status,
+    last_stats,
+    total_stats,
+    last_duration,
+    interval,
+    remaining,
+):
+    return (
+        f"{E['SYNC']} Pass {iteration} | next {remaining}/{interval}s | "
+        f"total chg:{total_stats.changes} err:{total_stats.errors} conf:{total_stats.conflicts} | "
+        f"last chg:{last_stats.changes} err:{last_stats.errors} conf:{last_stats.conflicts} | "
+        f"G>D:{total_stats.copied_left_to_right} D>G:{total_stats.copied_right_to_left} "
+        f"del:{total_stats.deleted_left}/{total_stats.deleted_right} | "
+        f"scan:{format_duration(last_duration)} | {last_status}"
+    )
 
 
 def run_live(
@@ -378,43 +456,85 @@ def run_live(
     dry_run,
     interval,
     propagate_deletes,
+    compact=False,
 ):
-    safe_print(
-        f"\n{E['SYNC']} Mode live actif : vérification toutes les {interval}s."
-    )
-    safe_print("Appuyez sur Ctrl+C pour arrêter.\n")
+    if not compact:
+        safe_print(
+            f"\n{E['SYNC']} Mode live actif : vérification toutes les {interval}s."
+        )
+        safe_print("Appuyez sur Ctrl+C pour arrêter.\n")
 
     previous_signature = None
     iteration = 1
+    total_stats = SyncStats()
+    last_stats = SyncStats()
+    last_status = "Initialisation"
+    last_duration = 0.0
+    renderer = CompactRenderer() if compact else None
 
-    while True:
-        safe_print(f"\n--- {E['SYNC']} Passage n°{iteration} ---")
-        current_signature = (
-            quick_signature(left_root, excluded_dirs),
-            quick_signature(right_root, excluded_dirs),
-        )
-
-        if previous_signature == current_signature:
-            safe_print(
-                f"{E['SUCCESS']} Aucun changement metadata détecté, synchro ignorée."
-            )
-        else:
-            run_once(
-                left_root,
-                right_root,
-                excluded_dirs,
-                prefer,
-                dry_run,
-                propagate_deletes,
-            )
-            previous_signature = (
+    try:
+        while True:
+            started = time.time()
+            if not compact:
+                safe_print(f"\n--- {E['SYNC']} Passage n°{iteration} ---")
+            current_signature = (
                 quick_signature(left_root, excluded_dirs),
                 quick_signature(right_root, excluded_dirs),
             )
 
-        iteration += 1
-        safe_print(f"{E['HOURGLASS']} Attente de {interval}s...")
-        time.sleep(interval)
+            if previous_signature == current_signature:
+                last_stats = SyncStats()
+                last_status = "Aucun changement metadata détecté"
+                if not compact:
+                    safe_print(
+                        f"{E['SUCCESS']} Aucun changement metadata détecté, synchro ignorée."
+                    )
+            else:
+                last_stats = run_once(
+                    left_root,
+                    right_root,
+                    excluded_dirs,
+                    prefer,
+                    dry_run,
+                    propagate_deletes,
+                    verbose=not compact,
+                )
+                add_stats(total_stats, last_stats)
+                if last_stats.errors:
+                    last_status = "Terminé avec erreur(s)"
+                elif last_stats.conflicts:
+                    last_status = "Terminé avec conflit(s)"
+                elif last_stats.changes:
+                    last_status = "Changements synchronisés"
+                else:
+                    last_status = "Scan complet, aucun changement"
+                previous_signature = (
+                    quick_signature(left_root, excluded_dirs),
+                    quick_signature(right_root, excluded_dirs),
+                )
+
+            last_duration = time.time() - started
+            iteration += 1
+            if compact:
+                for remaining in range(interval, 0, -1):
+                    renderer.render(
+                        compact_status_line(
+                            iteration - 1,
+                            last_status,
+                            last_stats,
+                            total_stats,
+                            last_duration,
+                            interval,
+                            remaining,
+                        )
+                    )
+                    time.sleep(1)
+            else:
+                safe_print(f"{E['HOURGLASS']} Attente de {interval}s...")
+                time.sleep(interval)
+    finally:
+        if renderer:
+            renderer.close()
 
 
 def validate_roots(left_root, right_root):
@@ -517,6 +637,14 @@ def build_parser():
             "À tester d'abord avec --test."
         ),
     )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help=(
+            "En mode live, rafraîchit un panneau de statut au lieu "
+            "d'ajouter des lignes à chaque passage."
+        ),
+    )
     return parser
 
 
@@ -571,6 +699,7 @@ def main():
                 dry_run,
                 interval,
                 args.delete,
+                args.compact,
             )
         else:
             run_once(
