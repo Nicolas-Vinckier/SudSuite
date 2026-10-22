@@ -154,6 +154,8 @@ Synchronise deux répertoires en bidirectionnel, par exemple un lecteur réseau 
 - **Mode unique ou live** : exécution ponctuelle ou boucle avec intervalle configurable (`30s`, `60s`, etc.).
 - **Scan léger** : le mode live vérifie d'abord une signature metadata rapide pour éviter les copies inutiles.
 - **Sécurité** : ne propage pas les suppressions automatiquement et signale les conflits ambigus.
+- **Suppressions protégées (`--delete`)** : Avant toute opération, un manifeste horodaté liste les fichiers à retirer dans `SudGit/.sud_folder_sync_state/deletion_plans/`. Les fichiers sont déplacés dans `SudGit/.sud_folder_sync_state/trash/` pour restauration. Le tampon est conservé 30 jours par défaut, puis purgé lors d'une exécution suivante ; réglez cette durée avec `--trash-retention-days N`. Si une vague de suppressions viderait entièrement un côté, la synchronisation est bloquée et l'état n'est pas mis à jour. Un scan incomplet interrompt aussi l'exécution.
+  Pour restaurer, retrouvez le lot indiqué dans le manifeste puis recopiez le fichier depuis son sous-dossier `left/` ou `right/` vers le dossier d'origine, avec le même chemin relatif.
 
 ### 14. 🧬 Sud Duplicate (`SudMedia/sud_duplicate.py`)
 

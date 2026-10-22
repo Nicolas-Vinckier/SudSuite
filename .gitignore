@@ -21,3 +21,4 @@
 /SudDuplicate_*
 /SudOCR_*
 *.json
+/SudGit/.sud_folder_sync_state/

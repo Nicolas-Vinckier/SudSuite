@@ -5,6 +5,8 @@ import os
 import shutil
 import sys
 import time
+import uuid
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +35,7 @@ _UTF8_SYSTEM = (getattr(sys.stdout, "encoding", "") or "").lower() == "utf-8"
 E = get_emojis(_UTF8_SYSTEM)
 SCRIPT_DIR = Path(__file__).resolve().parent
 STATE_DIR = SCRIPT_DIR / ".sud_folder_sync_state"
+DEFAULT_TRASH_RETENTION_DAYS = 30
 
 
 DEFAULT_EXCLUDED_DIRS = {
@@ -45,6 +48,7 @@ DEFAULT_EXCLUDED_DIRS = {
     "venv",
     ".idea",
     ".vscode",
+    ".sud_folder_sync_state",
 }
 
 
@@ -148,20 +152,17 @@ def should_skip_dir(dir_name, excluded_dirs):
 
 def scan_folder(root, excluded_dirs):
     files = {}
-    for current_root, dirnames, filenames in os.walk(root):
+    def scan_error(exc):
+        raise exc
+
+    for current_root, dirnames, filenames in os.walk(root, onerror=scan_error):
         dirnames[:] = [
             d for d in dirnames if not should_skip_dir(d, excluded_dirs)
         ]
         current_path = Path(current_root)
         for filename in filenames:
             absolute_path = current_path / filename
-            try:
-                stat = absolute_path.stat()
-            except OSError as exc:
-                safe_print(
-                    f"{E['WARN']}  Impossible de lire {absolute_path} : {exc}"
-                )
-                continue
+            stat = absolute_path.stat()
 
             relative_path = absolute_path.relative_to(root)
             files[relative_path] = FileInfo(
@@ -172,6 +173,71 @@ def scan_folder(root, excluded_dirs):
                 modified_ns=stat.st_mtime_ns,
             )
     return files
+
+
+def ensure_root_available(root):
+    if not root.is_dir():
+        raise OSError(f"Dossier inaccessible pendant la synchronisation : {root}")
+
+
+def deletion_plan(left_files, right_files, previous_state):
+    planned = []
+    for relative_path in sorted(set(left_files) ^ set(right_files), key=lambda p: str(p).lower()):
+        if str(relative_path) not in previous_state:
+            continue
+        if relative_path in left_files:
+            planned.append(("left", left_files[relative_path]))
+        else:
+            planned.append(("right", right_files[relative_path]))
+    return planned
+
+
+def write_deletion_manifest(left_root, right_root, planned, dry_run):
+    if not planned:
+        return None, None
+    run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "-" + uuid.uuid4().hex[:8]
+    pair_id = state_file_for(left_root, right_root).stem
+    manifest_dir = STATE_DIR / "deletion_plans" / pair_id
+    manifest_path = manifest_dir / f"{run_id}.txt"
+    trash_dir = STATE_DIR / "trash" / pair_id / run_id
+    if dry_run:
+        return manifest_path, trash_dir
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    with manifest_path.open("x", encoding="utf-8") as handle:
+        handle.write(f"# Suppressions prévues : {timestamp}\n")
+        handle.write(f"# Gauche : {left_root}\n# Droite : {right_root}\n")
+        handle.write(f"# Tampon : {trash_dir}\n")
+        for side, info in planned:
+            handle.write(f"{side} | {info.relative_path} | {timestamp}\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return manifest_path, trash_dir
+
+
+def cleanup_expired_trash(left_root, right_root, retention_days):
+    trash_root = STATE_DIR / "trash" / state_file_for(left_root, right_root).stem
+    if not trash_root.exists():
+        return
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    for run_dir in trash_root.iterdir():
+        if not run_dir.is_dir():
+            continue
+        created = datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc)
+        if created < cutoff:
+            shutil.rmtree(run_dir)
+
+
+def archive_file(info, root, side, trash_dir):
+    source = root / info.relative_path
+    if not source.is_file() or source.stat().st_size != info.size:
+        raise OSError(f"Fichier modifié ou inaccessible depuis le scan : {source}")
+    destination = trash_dir / side / info.relative_path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise FileExistsError(destination)
+    shutil.move(str(source), str(destination))
+    cleanup_empty_parents(source, root)
 
 
 def state_file_for(left_root, right_root):
@@ -228,16 +294,18 @@ def quick_signature(root, excluded_dirs):
     newest_mtime = 0
     newest_ctime = 0
 
-    for current_root, dirnames, filenames in os.walk(root):
+    ensure_root_available(root)
+
+    def scan_error(exc):
+        raise exc
+
+    for current_root, dirnames, filenames in os.walk(root, onerror=scan_error):
         dirnames[:] = [
             d for d in dirnames if not should_skip_dir(d, excluded_dirs)
         ]
         for filename in filenames:
             path = Path(current_root) / filename
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
+            stat = path.stat()
             files_count += 1
             total_size += stat.st_size
             newest_mtime = max(newest_mtime, stat.st_mtime_ns)
@@ -291,13 +359,6 @@ def cleanup_empty_parents(path, root):
         current = current.parent
 
 
-def delete_file(path, root, dry_run=False):
-    if dry_run:
-        return
-    path.unlink()
-    cleanup_empty_parents(path, root)
-
-
 def sync_once(
     left_root,
     right_root,
@@ -306,6 +367,7 @@ def sync_once(
     dry_run=False,
     propagate_deletes=False,
     verbose=True,
+    trash_retention_days=DEFAULT_TRASH_RETENTION_DAYS,
 ):
     stats = SyncStats()
     if verbose:
@@ -313,10 +375,32 @@ def sync_once(
         safe_print(f"   Gauche : {left_root}")
         safe_print(f"   Droite : {right_root}")
 
+    ensure_root_available(left_root)
+    ensure_root_available(right_root)
     left_files = scan_folder(left_root, excluded_dirs)
     right_files = scan_folder(right_root, excluded_dirs)
+    ensure_root_available(left_root)
+    ensure_root_available(right_root)
     previous_state = load_state(left_root, right_root) if propagate_deletes else {}
     all_paths = sorted(set(left_files) | set(right_files), key=lambda p: str(p).lower())
+    planned = deletion_plan(left_files, right_files, previous_state) if propagate_deletes else []
+    manifest_path, trash_dir = write_deletion_manifest(
+        left_root, right_root, planned, dry_run
+    )
+    if manifest_path and verbose:
+        safe_print(f"{E['WARN']}  {len(planned)} suppression(s) prévue(s) : {manifest_path}")
+        if not dry_run:
+            safe_print(f"{E['FOLDER']} Tampon de restauration : {trash_dir}")
+    for side, files in (("left", left_files), ("right", right_files)):
+        count = sum(planned_side == side for planned_side, _ in planned)
+        if files and count == len(files):
+            raise RuntimeError(
+                f"Suppression totale bloquée côté {side} ({count} fichiers). "
+                f"Vérifiez la connexion et les deux dossiers. Liste : {manifest_path}. "
+                "Aucun état mis à jour."
+            )
+    if not dry_run:
+        cleanup_expired_trash(left_root, right_root, trash_retention_days)
 
     for relative_path in all_paths:
         left_info = left_files.get(relative_path)
@@ -330,7 +414,8 @@ def sync_once(
                     prefix = E["TEST"] if dry_run else E["WARN"]
                     if verbose:
                         safe_print(f"{prefix} Suppression propagée sur gauche : {relative_path}")
-                    delete_file(left_path, left_root, dry_run=dry_run)
+                    if not dry_run:
+                        archive_file(left_info, left_root, "left", trash_dir)
                     stats.deleted_left += 1
                 else:
                     prefix = E["TEST"] if dry_run else E["COPY"]
@@ -343,7 +428,8 @@ def sync_once(
                     prefix = E["TEST"] if dry_run else E["WARN"]
                     if verbose:
                         safe_print(f"{prefix} Suppression propagée sur droite : {relative_path}")
-                    delete_file(right_path, right_root, dry_run=dry_run)
+                    if not dry_run:
+                        archive_file(right_info, right_root, "right", trash_dir)
                     stats.deleted_right += 1
                 else:
                     prefix = E["TEST"] if dry_run else E["COPY"]
@@ -378,9 +464,9 @@ def sync_once(
                 safe_print(f"{E['ERROR']} Erreur sur {relative_path} : {exc}")
             stats.errors += 1
 
-    if dry_run:
-        save_state(left_root, right_root, left_files, right_files, dry_run=True)
-    else:
+    if not dry_run and not stats.errors:
+        ensure_root_available(left_root)
+        ensure_root_available(right_root)
         save_state(
             left_root,
             right_root,
@@ -412,6 +498,7 @@ def run_once(
     dry_run,
     propagate_deletes,
     verbose=True,
+    trash_retention_days=DEFAULT_TRASH_RETENTION_DAYS,
 ):
     started = time.time()
     stats = sync_once(
@@ -422,6 +509,7 @@ def run_once(
         dry_run,
         propagate_deletes,
         verbose,
+        trash_retention_days,
     )
     elapsed = time.time() - started
     if verbose:
@@ -457,6 +545,7 @@ def run_live(
     interval,
     propagate_deletes,
     compact=False,
+    trash_retention_days=DEFAULT_TRASH_RETENTION_DAYS,
 ):
     if not compact:
         safe_print(
@@ -498,6 +587,7 @@ def run_live(
                     dry_run,
                     propagate_deletes,
                     verbose=not compact,
+                    trash_retention_days=trash_retention_days,
                 )
                 add_stats(total_stats, last_stats)
                 if last_stats.errors:
@@ -544,6 +634,8 @@ def validate_roots(left_root, right_root):
         raise ValueError(f"Le dossier droit n'existe pas : {right_root}")
     if left_root == right_root:
         raise ValueError("Les deux dossiers doivent être différents.")
+    if left_root in right_root.parents or right_root in left_root.parents:
+        raise ValueError("Les deux dossiers ne doivent pas être imbriqués.")
 
 
 def ask_path(label):
@@ -638,6 +730,12 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--trash-retention-days",
+        type=int,
+        default=DEFAULT_TRASH_RETENTION_DAYS,
+        help="Conserve les fichiers dans le tampon pendant ce nombre de jours (défaut : 30).",
+    )
+    parser.add_argument(
         "--compact",
         action="store_true",
         help=(
@@ -655,6 +753,8 @@ def main():
     afficher_en_tete()
     parser = build_parser()
     args = parser.parse_args()
+    if args.trash_retention_days < 1:
+        parser.error("--trash-retention-days doit être au moins 1")
 
     try:
         left_root = normalize_root(args.left) if args.left else ask_path("Dossier gauche")
@@ -700,6 +800,7 @@ def main():
                 interval,
                 args.delete,
                 args.compact,
+                args.trash_retention_days,
             )
         else:
             run_once(
@@ -709,6 +810,7 @@ def main():
                 args.prefer,
                 dry_run,
                 args.delete,
+                trash_retention_days=args.trash_retention_days,
             )
 
     except KeyboardInterrupt:
