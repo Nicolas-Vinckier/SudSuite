@@ -1,6 +1,6 @@
 """Outils de traitement et conversion de documents bureautiques."""
 
-from .docx_optimizer import (
+from .docx_media import (
     DOCX_EXTENSIONS,
     DocxMediaChange,
     DocxOptimizationError,

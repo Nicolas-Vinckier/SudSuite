@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .atomic import atomic_write_json
+from SudCore.files import atomic_write_json
 from .paths import unique_path
 
 

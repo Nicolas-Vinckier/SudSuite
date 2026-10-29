@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-from ..filesystem.collector import collect_files
+from SudCore.files import collect_files
 from ..image.constants import IMAGE_EXTENSIONS
 from .backends import OCRBackend
 from .models import OCRDocument, OCRPage, OCRResult
@@ -29,14 +29,11 @@ def _extract_pdf(
 ) -> OCRDocument:
     try:
         import pymupdf as fitz
-    except ImportError:
-        try:
-            import fitz
-        except ImportError as error:
-            raise RuntimeError(
-                "PyMuPDF est requis pour lire les PDF. "
-                "Installez-le avec : pip install PyMuPDF"
-            ) from error
+    except ImportError as error:
+        raise RuntimeError(
+            "PyMuPDF est requis pour lire les PDF. "
+            "Installez-le avec : pip install PyMuPDF"
+        ) from error
 
     pages: list[OCRPage] = []
     zoom = dpi / 72

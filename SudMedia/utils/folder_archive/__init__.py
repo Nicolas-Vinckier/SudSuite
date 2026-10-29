@@ -12,7 +12,7 @@ from .compression import (
     select_backend,
     stream_tar_to_process,
 )
-from .constants import BUFFER_SIZE, EXCLUDE_PATTERNS, XZ_MAGIC
+from .constants import BUFFER_SIZE, XZ_MAGIC
 from .extraction import (
     execute_extraction,
     extract_tar_members,
@@ -23,7 +23,7 @@ from .extraction import (
     extract_zip_python,
     inspect_zip_for_extraction,
 )
-from .models import CompressionBackendError, ExtractionBackendError, FileEntry, Toolchain
+from .models import CompressionBackendError, ExtractionBackendError, Toolchain
 from .toolchain import (
     build_7zip_listfile,
     decode_external_output,
@@ -50,9 +50,7 @@ from .verification import (
 __all__ = [
     "BUFFER_SIZE",
     "CompressionBackendError",
-    "EXCLUDE_PATTERNS",
     "ExtractionBackendError",
-    "FileEntry",
     "Toolchain",
     "XZ_MAGIC",
     "add_entries_to_tar",

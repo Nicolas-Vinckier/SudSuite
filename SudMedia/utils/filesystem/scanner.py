@@ -7,7 +7,7 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .constants import EXCLUDE_PATTERNS, IGNORED_DIRECTORY_NAMES
+from SudCore.files import IGNORED_DIRECTORY_NAMES
 
 
 @dataclass(frozen=True)
@@ -15,10 +15,6 @@ class ScannedEntry:
     path: str
     arcname: str
     size: int
-
-
-# Alias pour compatibilité
-FileEntry = ScannedEntry
 
 
 def _normalized_name_patterns(patterns: Iterable[str] | None) -> set[str]:
@@ -77,7 +73,7 @@ def walk_filtered(
 def scan_folder(
     folder_path: str | os.PathLike[str],
     quiet: bool = False,
-    exclude_patterns: Iterable[str] = EXCLUDE_PATTERNS,
+    exclude_patterns: Iterable[str] = IGNORED_DIRECTORY_NAMES,
     exclude_folders: Iterable[str] | None = None,
     exclude_files: Iterable[str] | None = None,
     exclude_extensions: Iterable[str] | None = None,

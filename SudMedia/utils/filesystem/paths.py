@@ -7,45 +7,12 @@ import re
 import uuid
 from pathlib import Path
 
+from SudCore.files import unique_path
+
 
 class ExtractionBackendError(RuntimeError):
     """Erreur levée lors d'anomalies de chemin ou de décompression."""
     pass
-
-
-def clean_input_path(value: str | None) -> str:
-    """Nettoie un chemin saisi ou glissé-déposé dans le terminal."""
-    if value is None:
-        return ""
-
-    cleaned = value.strip()
-    if (
-        len(cleaned) >= 2
-        and cleaned[0] == cleaned[-1]
-        and cleaned[0] in {'"', "'"}
-    ):
-        cleaned = cleaned[1:-1]
-    return cleaned
-
-
-def paths_overlap(first_path: str | os.PathLike[str], second_path: str | os.PathLike[str]) -> bool:
-    """Indique si deux chemins sont identiques ou imbriqués l'un dans l'autre."""
-    first = Path(first_path).expanduser().resolve()
-    second = Path(second_path).expanduser().resolve()
-    return first == second or first in second.parents or second in first.parents
-
-
-def unique_path(path: str | os.PathLike[str]) -> Path:
-    """Trouve un objet Path disponible sans écraser un fichier existant."""
-    candidate = Path(path)
-    if not candidate.exists():
-        return candidate
-    index = 2
-    while True:
-        numbered = candidate.with_name(f"{candidate.stem}_{index}{candidate.suffix}")
-        if not numbered.exists():
-            return numbered
-        index += 1
 
 
 def unique_available_path(output_path: str | os.PathLike[str]) -> str:

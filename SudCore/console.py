@@ -1,4 +1,4 @@
-"""Configuration du terminal et de la console."""
+"""Configuration commune de la console pour les outils de SudSuite."""
 
 from __future__ import annotations
 
@@ -20,5 +20,5 @@ def configure_console_output() -> None:
             reconfigure(encoding="utf-8")
         except (AttributeError, LookupError, OSError):
             # Une sortie redirigée ou remplacée (tests, IDE) n'est pas toujours
-            # reconfigurable. L'outil reste utilisable avec son encodage courant.
+            # reconfigurable ; l'outil reste utilisable avec son encodage courant.
             pass

@@ -2,7 +2,6 @@
 
 Ce module regroupe l'ensemble des utilitaires partagés, organisés en sous-packages
 thématiques :
-- console : configuration du terminal et encodage UTF-8/VT100
 - filesystem : chemins, exclusions, scans récursifs, écritures atomiques et quarantaine
 - hashing : empreintes binaires (SHA256), perceptuelles (dHash) et index de similarité (BK-tree)
 - image : configuration Pillow, formats, métadonnées et redimensionnement
@@ -17,7 +16,7 @@ thématiques :
 from __future__ import annotations
 
 # Sous-packages thématiques
-from . import console, duplicate, filesystem, folder_archive, hashing, image, metrics, ocr, office, progress
+from . import duplicate, filesystem, folder_archive, hashing, image, metrics, ocr, office, progress
 from .folder_archive import (
     BUFFER_SIZE,
     CompressionBackendError,
@@ -40,7 +39,7 @@ from .folder_archive import (
     quick_verify_zip,
     verify_archive,
 )
-from .console import configure_console_output
+from SudCore.console import configure_console_output
 from .duplicate import (
     DuplicateGroup,
     DuplicateReport,
@@ -49,10 +48,7 @@ from .duplicate import (
     scan_duplicates,
 )
 from .filesystem import (
-    DEFAULT_IGNORED_DIRECTORIES,
-    EXCLUDE_PATTERNS,
     IGNORED_DIRECTORY_NAMES,
-    FileEntry,
     QuarantineResult,
     ScannedEntry,
     archive_base_name,
@@ -111,7 +107,6 @@ from .progress import (
     ProgressReader,
     format_duration,
     format_size_short,
-    render_progress,
 )
 from .ocr import (
     OCR_EXTENSIONS,
@@ -146,13 +141,10 @@ from .office import (
 __all__ = [
     "BUFFER_SIZE",
     "CompressionBackendError",
-    "DEFAULT_IGNORED_DIRECTORIES",
     "DuplicateGroup",
     "DuplicateReport",
-    "EXCLUDE_PATTERNS",
     "ExtractionBackendError",
     "FileCandidate",
-    "FileEntry",
     "HammingIndex",
     "IGNORED_DIRECTORY_NAMES",
     "IMAGE_EXTENSIONS",
@@ -196,7 +188,6 @@ __all__ = [
     "compress_zip_python",
     "configure_console_output",
     "configure_pillow",
-    "console",
     "content_hash",
     "convert_spreadsheet_to_pdf",
     "describe_backend",
@@ -246,7 +237,6 @@ __all__ = [
     "quick_verify_zip",
     "remove_output_from_entries",
     "render_document",
-    "render_progress",
     "reserve_output_path",
     "resize_image",
     "resolve_archive_output_path",

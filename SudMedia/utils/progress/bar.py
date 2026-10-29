@@ -319,25 +319,3 @@ class Progress:
         self.status = status
         self._render(force=True)
         print()
-
-
-def render_progress(
-    global_index: int,
-    global_total: int,
-    filename: str,
-    step: int | float = 0,
-    total_steps: int | float = 100,
-    status: str | None = None,
-) -> None:
-    """Compatibilité avec l'ancienne API de progression par palier."""
-    progress = Progress(global_total, label="Traitement")
-    progress.completed_files = max(0, min(progress.total_files, global_index))
-    progress.current_item = Path(filename).name
-    progress.status = status or ""
-    if progress.total_files:
-        local_ratio = min(1.0, max(0.0, float(step) / float(total_steps or 1)))
-        progress.manual_ratio = min(
-            1.0,
-            (progress.completed_files + local_ratio) / progress.total_files,
-        )
-    progress._render(force=True)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..filesystem.atomic import atomic_write_text
-from ..filesystem.paths import unique_path
+from SudCore.files import atomic_write_text
+from SudCore.files import unique_path
 from .models import OCRDocument
 
 

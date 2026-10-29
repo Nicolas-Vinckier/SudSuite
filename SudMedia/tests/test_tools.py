@@ -16,22 +16,24 @@ except ImportError:
 add_project_root()
 
 from SudMedia.folder_compressor import (
-    ExtractionBackendError,
-    archive_base_name,
+    _split_input_paths,
     build_parser,
     compress_folder,
-    compress_zip_python,
     decompress_archive,
-    decompress_folder_archives,
-    decompress_single_archive,
-    extract_zip_python,
+)
+from SudMedia.utils.filesystem import (
+    archive_base_name,
     find_archive_files,
-    inspect_zip_for_extraction,
     safe_member_path,
     scan_folder,
-    Toolchain,
-    _split_input_paths,
 )
+from SudMedia.utils.folder_archive import (
+    ExtractionBackendError,
+    Toolchain,
+    compress_zip_python,
+    extract_zip_python,
+)
+from SudMedia.utils.folder_archive.extraction import inspect_zip_for_extraction
 from SudMedia.folder_weight import scan_folder as scan_folder_weights
 from SudMedia.image_renamer import format_timestamp, get_unique_filename
 from SudMedia import image_sorting
@@ -505,30 +507,6 @@ class MediaOrganizationToolTests(unittest.TestCase):
                 config_file.read_text(encoding="utf-8"),
                 '{\n    "source": "photos",\n    "destination": "tri"\n}',
             )
-
-    def test_legacy_sorting_config_is_migrated(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            config_directory = root / "configs"
-            config_file = config_directory / "image_sorting_config.json"
-            legacy_config = root / "image_sorting_config.json"
-            legacy_config.write_text('{"source": "photos"}', encoding="utf-8")
-
-            with (
-                mock.patch.object(
-                    image_sorting, "CONFIG_DIRECTORY", config_directory
-                ),
-                mock.patch.object(image_sorting, "CONFIG_FILE", config_file),
-                mock.patch.object(
-                    image_sorting, "LEGACY_CONFIG_FILE", legacy_config
-                ),
-                contextlib.redirect_stdout(io.StringIO()),
-            ):
-                loaded = image_sorting.charger_config()
-
-            self.assertEqual(loaded, {"source": "photos"})
-            self.assertTrue(config_file.exists())
-            self.assertFalse(legacy_config.exists())
 
     def test_filename_date_detection(self):
         year, month = get_date_from_file(

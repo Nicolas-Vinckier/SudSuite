@@ -17,7 +17,7 @@ try:
 except ImportError:
     Image = None
 
-from SudMedia.sudmedia_utils import (
+from SudMedia.utils import (
     Progress,
     ProcessingStats,
     analyze_quality,
@@ -31,7 +31,6 @@ from SudMedia.sudmedia_utils import (
     prepare_image_for_format,
     prepare_image_for_quality,
     print_processing_summary,
-    render_progress,
     reserve_output_path,
     resize_image,
     unique_available_path,
@@ -104,12 +103,6 @@ class DisplayUtilitiesTests(unittest.TestCase):
         self.assertEqual(format_size(0), "0.00 O")
         self.assertEqual(format_size(1024), "1.00 Ko")
         self.assertEqual(format_size(1024**4), "1.00 To")
-
-    def test_progress_accepts_empty_totals(self):
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            render_progress(0, 0, "image.png", total_steps=0)
-        self.assertIn("image.png", output.getvalue())
 
     def test_progress_supports_files_bytes_and_indeterminate_work(self):
         progress = Progress(2, 100, enabled=False)

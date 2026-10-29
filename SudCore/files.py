@@ -6,12 +6,12 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 
-DEFAULT_IGNORED_DIRECTORIES = frozenset(
+IGNORED_DIRECTORY_NAMES = frozenset(
     {
         ".git",
         ".idea",
@@ -27,12 +27,32 @@ DEFAULT_IGNORED_DIRECTORIES = frozenset(
 )
 
 
+def clean_input_path(value: str | None) -> str:
+    """Nettoie un chemin saisi ou glissé-déposé dans le terminal."""
+    if value is None:
+        return ""
+
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
+        cleaned = cleaned[1:-1]
+    return cleaned
+
+
+def paths_overlap(
+    first_path: str | os.PathLike[str], second_path: str | os.PathLike[str]
+) -> bool:
+    """Indique si deux chemins sont identiques ou imbriqués l'un dans l'autre."""
+    first = Path(first_path).expanduser().resolve()
+    second = Path(second_path).expanduser().resolve()
+    return first == second or first in second.parents or second in first.parents
+
+
 def _normalized_extensions(extensions: Iterable[str] | None) -> tuple[str, ...] | None:
     if extensions is None:
         return None
     return tuple(
         extension.lower() if extension.startswith(".") else f".{extension.lower()}"
-        for extension in extensions
+        for extension in (str(item) for item in extensions)
     )
 
 
@@ -40,7 +60,7 @@ def collect_files(
     paths: Iterable[str | os.PathLike[str]],
     *,
     extensions: Iterable[str] | None = None,
-    ignored_directories: Iterable[str] = DEFAULT_IGNORED_DIRECTORIES,
+    ignored_directories: Iterable[str] = IGNORED_DIRECTORY_NAMES,
 ) -> list[Path]:
     """Retourne les fichiers uniques d'une sélection, dans un ordre stable."""
     accepted = _normalized_extensions(extensions)
@@ -57,7 +77,10 @@ def collect_files(
             files.append(path)
 
     for raw_path in paths:
-        path = Path(os.fspath(raw_path).strip().strip('"')).expanduser()
+        cleaned = clean_input_path(os.fspath(raw_path))
+        if not cleaned:
+            continue
+        path = Path(cleaned).expanduser()
         if path.is_file():
             add(path)
             continue
@@ -103,8 +126,17 @@ def unique_path(path: str | os.PathLike[str]) -> Path:
         index += 1
 
 
-def atomic_write_json(path: str | os.PathLike[str], data: Any) -> Path:
-    """Écrit un document JSON atomiquement dans son dossier de destination."""
+def atomic_write_bytes(
+    path: str | os.PathLike[str],
+    writer: Callable[[BinaryIO], object],
+    *,
+    mode: int | None = None,
+) -> Path:
+    """Écrit un fichier via ``writer(flux_binaire)`` puis le remplace atomiquement.
+
+    ``mode`` restreint les permissions du fichier temporaire (ex. ``0o600``) avant
+    qu'il ne reçoive du contenu.
+    """
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
@@ -112,9 +144,10 @@ def atomic_write_json(path: str | os.PathLike[str], data: Any) -> Path:
     )
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=2, sort_keys=True)
-            stream.write("\n")
+        if mode is not None:
+            os.chmod(temporary, mode)
+        with os.fdopen(descriptor, "wb") as stream:
+            writer(stream)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, destination)
@@ -122,3 +155,26 @@ def atomic_write_json(path: str | os.PathLike[str], data: Any) -> Path:
         temporary.unlink(missing_ok=True)
         raise
     return destination
+
+
+def atomic_write_text(
+    path: str | os.PathLike[str],
+    text: str,
+    encoding: str = "utf-8",
+    make_unique: bool = False,
+) -> Path:
+    """Écrit du texte atomiquement dans son dossier de destination."""
+    destination = unique_path(path) if make_unique else Path(path)
+    data = text.replace("\r\n", "\n").encode(encoding)
+    return atomic_write_bytes(destination, lambda stream: stream.write(data))
+
+
+def atomic_write_json(
+    path: str | os.PathLike[str],
+    data: Any,
+    encoding: str = "utf-8",
+    indent: int = 2,
+) -> Path:
+    """Écrit un document JSON atomiquement dans son dossier de destination."""
+    text = json.dumps(data, ensure_ascii=False, indent=indent, sort_keys=True) + "\n"
+    return atomic_write_text(path, text, encoding)

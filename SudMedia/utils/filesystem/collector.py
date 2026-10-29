@@ -6,8 +6,9 @@ import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from .constants import IGNORED_DIRECTORY_NAMES
-from .paths import clean_input_path, detect_archive_format
+from SudCore.files import IGNORED_DIRECTORY_NAMES, clean_input_path
+
+from .paths import detect_archive_format
 from .scanner import walk_filtered
 
 
@@ -71,49 +72,6 @@ def collect_target_files(
             reporter(f"❌ '{path}' n'est ni un fichier ni un dossier valide.")
 
     return collected
-
-
-def collect_files(
-    paths: Iterable[str | os.PathLike[str]],
-    *,
-    extensions: Iterable[str] | None = None,
-    ignored_directories: Iterable[str] = IGNORED_DIRECTORY_NAMES,
-) -> list[Path]:
-    """Retourne les fichiers uniques d'une sélection sous forme de chemins Path."""
-    accepted = _normalized_extensions(extensions)
-    ignored = set(ignored_directories)
-    files: list[Path] = []
-    seen: set[str] = set()
-
-    def add(path: Path) -> None:
-        if accepted is not None and path.suffix.lower() not in accepted:
-            return
-        identity = os.path.normcase(os.path.realpath(path))
-        if identity not in seen:
-            seen.add(identity)
-            files.append(path)
-
-    for raw_path in paths:
-        cleaned_str = clean_input_path(os.fspath(raw_path))
-        if not cleaned_str:
-            continue
-        path = Path(cleaned_str).expanduser()
-        if path.is_file():
-            add(path)
-            continue
-        if not path.is_dir():
-            continue
-
-        for root, directories, filenames in os.walk(path, followlinks=False):
-            directories[:] = sorted(
-                name
-                for name in directories
-                if name not in ignored and not name.startswith((".", "__"))
-            )
-            for filename in sorted(filenames):
-                add(Path(root) / filename)
-
-    return files
 
 
 def find_archive_files(

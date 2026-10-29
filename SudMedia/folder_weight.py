@@ -6,10 +6,10 @@ import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
 
-try:
-    from .sudmedia_utils import Progress, clean_input_path, configure_console_output, format_size
-except ImportError:
-    from sudmedia_utils import Progress, clean_input_path, configure_console_output, format_size
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import Progress, clean_input_path, configure_console_output, format_size
 
 configure_console_output()
 

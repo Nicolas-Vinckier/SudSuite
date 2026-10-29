@@ -1,7 +1,6 @@
 """CLI du compresseur de dossiers SudMedia.
 
-La logique réutilisable est répartie dans ``SudMedia.utils.folder_archive``. Les imports
-restent exposes ici pour conserver la compatibilite avec l'ancien module.
+La logique réutilisable est répartie dans ``SudMedia.utils.folder_archive``.
 """
 
 import argparse
@@ -19,54 +18,18 @@ if __package__ in {None, ""}:
 import zipfile
 
 from SudMedia.utils.folder_archive import (
-    CompressionBackendError,
-    ExtractionBackendError,
-    FileEntry,
     Toolchain,
-    compress_tar_xz_external_7zip,
-    compress_tar_xz_external_xz,
-    compress_tar_xz_python,
-    compress_zip_7zip,
-    compress_zip_python,
     describe_backend,
-    detect_sevenzip,
     detect_toolchain,
-    detect_xz,
     execute_compression,
     execute_extraction,
-    extract_tar_members,
-    extract_tar_xz_7zip,
-    extract_tar_xz_external_xz,
-    extract_tar_xz_python,
-    extract_zip_7zip,
-    extract_zip_python,
-    full_verify_xz,
-    full_verify_zip,
     parse_threads,
-    quick_verify_xz,
-    quick_verify_zip,
     select_backend,
     verify_archive,
 )
-from SudMedia.utils.folder_archive.compression import (
-    add_entries_to_tar,
-    copy_with_progress,
-    stream_tar_to_process,
-)
-from SudMedia.utils.folder_archive.extraction import inspect_zip_for_extraction
-from SudMedia.utils.folder_archive.toolchain import (
-    build_7zip_listfile,
-    decode_external_output,
-    find_executable,
-    run_7zip_with_progress,
-    run_command,
-    safe_unlink,
-    thread_switch_7zip,
-    thread_switch_xz,
-)
-from SudMedia.utils.console import configure_console_output
+from SudMedia.utils.folder_archive.toolchain import safe_unlink
+from SudCore.console import configure_console_output
 from SudMedia.utils.filesystem import (
-    archive_base_name,
     clean_input_path,
     detect_archive_format,
     find_archive_files,
@@ -76,16 +39,11 @@ from SudMedia.utils.filesystem import (
     resolve_extraction_paths,
     safe_member_path,
     scan_folder,
+    ScannedEntry,
     unique_path,
 )
 from SudMedia.utils.hashing import content_hash, file_crc32
 from SudMedia.utils.metrics import analyze_size_change, format_size
-from SudMedia.utils.progress import (
-    Progress,
-    ProgressReader,
-    format_duration,
-    format_size_short,
-)
 
 
 def print_diagnostics(tools, requested_threads, effective_threads):
@@ -591,7 +549,7 @@ def _scan_compression_targets(
         if include_folder_root:
             root_name = archive_roots[folder]
             entries = [
-                FileEntry(
+                ScannedEntry(
                     entry.path,
                     str(Path(root_name) / entry.arcname),
                     entry.size,

@@ -1,4 +1,6 @@
-from .binary import content_hash, file_crc32, hash_file
+from SudCore.files import hash_file
+
+from .binary import content_hash, file_crc32
 from .index import HammingIndex
 from .visual import difference_hash, hamming_distance
 

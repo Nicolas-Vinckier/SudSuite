@@ -1,28 +1,30 @@
-"""Module filesystem : manipulation sécurisée et unifiée des fichiers et dossiers."""
+"""Module filesystem : chemins, scans et quarantaine, au-dessus de SudCore."""
 
-from .atomic import atomic_write_json, atomic_write_text
-from .collector import collect_files, collect_target_files, find_archive_files
-from .constants import DEFAULT_IGNORED_DIRECTORIES, EXCLUDE_PATTERNS, IGNORED_DIRECTORY_NAMES
+from SudCore.files import (
+    IGNORED_DIRECTORY_NAMES,
+    atomic_write_json,
+    atomic_write_text,
+    clean_input_path,
+    collect_files,
+    paths_overlap,
+    unique_path,
+)
+
+from .collector import collect_target_files, find_archive_files
 from .paths import (
     archive_base_name,
-    clean_input_path,
     detect_archive_format,
     make_staging_folder,
-    paths_overlap,
     reserve_output_path,
     resolve_archive_output_path,
     resolve_extraction_paths,
     safe_member_path,
     unique_available_path,
-    unique_path,
 )
 from .quarantine import QuarantineResult, quarantine_files
-from .scanner import FileEntry, ScannedEntry, remove_output_from_entries, scan_folder, walk_filtered
+from .scanner import ScannedEntry, remove_output_from_entries, scan_folder, walk_filtered
 
 __all__ = [
-    "DEFAULT_IGNORED_DIRECTORIES",
-    "EXCLUDE_PATTERNS",
-    "FileEntry",
     "IGNORED_DIRECTORY_NAMES",
     "QuarantineResult",
     "ScannedEntry",

@@ -1,32 +1,22 @@
 import os
 import sys
+from pathlib import Path
 
-try:
-    from .sudmedia_utils import (
-        IMAGE_OUTPUT_FORMATS,
-        Progress,
-        ProcessingStats,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        image_save_options,
-        prepare_image_for_format,
-        print_processing_summary,
-        reserve_output_path,
-    )
-except ImportError:
-    from sudmedia_utils import (
-        IMAGE_OUTPUT_FORMATS,
-        Progress,
-        ProcessingStats,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        image_save_options,
-        prepare_image_for_format,
-        print_processing_summary,
-        reserve_output_path,
-    )
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import (
+    IMAGE_OUTPUT_FORMATS,
+    Progress,
+    ProcessingStats,
+    collect_target_files,
+    configure_console_output,
+    configure_pillow,
+    image_save_options,
+    prepare_image_for_format,
+    print_processing_summary,
+    reserve_output_path,
+)
 
 configure_console_output()
 

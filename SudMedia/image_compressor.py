@@ -1,37 +1,25 @@
 import os
 import io
 import sys
+from pathlib import Path
 
-try:
-    from .sudmedia_utils import (
-        analyze_quality,
-        analyze_size_change,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        format_size,
-        get_original_image_quality,
-        image_save_options,
-        Progress,
-        prepare_image_for_format,
-        prepare_image_for_quality,
-        print_quality_analysis,
-    )
-except ImportError:
-    from sudmedia_utils import (
-        analyze_quality,
-        analyze_size_change,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        format_size,
-        get_original_image_quality,
-        image_save_options,
-        Progress,
-        prepare_image_for_format,
-        prepare_image_for_quality,
-        print_quality_analysis,
-    )
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import (
+    analyze_quality,
+    analyze_size_change,
+    collect_target_files,
+    configure_console_output,
+    configure_pillow,
+    format_size,
+    get_original_image_quality,
+    image_save_options,
+    Progress,
+    prepare_image_for_format,
+    prepare_image_for_quality,
+    print_quality_analysis,
+)
 
 configure_console_output()
 

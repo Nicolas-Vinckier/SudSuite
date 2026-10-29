@@ -1,44 +1,31 @@
 import os
 import sys
+from pathlib import Path
 
-try:
-    from .sudmedia_utils import (
-        IMAGE_OUTPUT_FORMATS,
-        Progress,
-        ProcessingStats,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        image_save_options,
-        print_processing_summary,
-        reserve_output_path,
-    )
-except ImportError:
-    from sudmedia_utils import (
-        IMAGE_OUTPUT_FORMATS,
-        Progress,
-        ProcessingStats,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        image_save_options,
-        print_processing_summary,
-        reserve_output_path,
-    )
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import (
+    IMAGE_OUTPUT_FORMATS,
+    Progress,
+    ProcessingStats,
+    collect_target_files,
+    configure_console_output,
+    configure_pillow,
+    image_save_options,
+    print_processing_summary,
+    reserve_output_path,
+)
 
 configure_console_output()
 
 try:
     import pymupdf as fitz
 except ImportError:
-    try:
-        # Compatibilité avec les versions historiques de PyMuPDF.
-        import fitz
-    except ImportError:
-        print("❌ La bibliothèque 'PyMuPDF' n'est pas installée.")
-        print("Veuillez l'installer avec la commande suivante :")
-        print("   pip install PyMuPDF")
-        sys.exit(1)
+    print("❌ La bibliothèque 'PyMuPDF' n'est pas installée.")
+    print("Veuillez l'installer avec la commande suivante :")
+    print("   pip install PyMuPDF")
+    sys.exit(1)
 
 try:
     from PIL import Image, ImageChops

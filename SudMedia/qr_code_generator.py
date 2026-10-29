@@ -7,10 +7,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-try:
-    from .sudmedia_utils import configure_console_output, configure_pillow, unique_available_path
-except ImportError:
-    from sudmedia_utils import configure_console_output, configure_pillow, unique_available_path
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import configure_console_output, configure_pillow, unique_available_path
 
 
 ERROR_CORRECTION_LEVELS = {

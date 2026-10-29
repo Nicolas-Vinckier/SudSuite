@@ -1,3 +1,4 @@
+import sys
 import os
 import shutil
 import datetime
@@ -6,34 +7,24 @@ import json
 import random
 from pathlib import Path
 
-try:
-    from .sudmedia_utils import (
-        MEDIA_EXTENSIONS,
-        Progress,
-        clean_input_path,
-        collect_target_files,
-        configure_console_output,
-        paths_overlap,
-        unique_available_path,
-        walk_filtered,
-    )
-except ImportError:
-    from sudmedia_utils import (
-        MEDIA_EXTENSIONS,
-        Progress,
-        clean_input_path,
-        collect_target_files,
-        configure_console_output,
-        paths_overlap,
-        unique_available_path,
-        walk_filtered,
-    )
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import (
+    MEDIA_EXTENSIONS,
+    Progress,
+    clean_input_path,
+    collect_target_files,
+    configure_console_output,
+    paths_overlap,
+    unique_available_path,
+    walk_filtered,
+)
 
 configure_console_output()
 
 CONFIG_DIRECTORY = Path(__file__).with_name("configs")
 CONFIG_FILE = CONFIG_DIRECTORY / "image_sorting_config.json"
-LEGACY_CONFIG_FILE = Path(__file__).with_name("image_sorting_config.json")
 
 mois_fr = {
     1: "Janvier",
@@ -77,18 +68,6 @@ mois_fr = {
 
 def charger_config():
     config_file = CONFIG_FILE
-    if not config_file.exists() and LEGACY_CONFIG_FILE.exists():
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            shutil.move(str(LEGACY_CONFIG_FILE), str(config_file))
-            print(f"Configuration déplacée vers {config_file}")
-        except OSError as error:
-            print(
-                "[Attention] Impossible de déplacer l'ancienne configuration "
-                f"vers {config_file} : {error}"
-            )
-            config_file = LEGACY_CONFIG_FILE
-
     if config_file.exists():
         try:
             with config_file.open("r", encoding="utf-8") as f:

@@ -1,31 +1,22 @@
 import os
 import sys
+from pathlib import Path
 from datetime import datetime
 
-try:
-    from .sudmedia_utils import (
-        Progress,
-        ProcessingStats,
-        RESIZE_METHODS,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        print_processing_summary,
-        reserve_output_path,
-        resize_image,
-    )
-except ImportError:
-    from sudmedia_utils import (
-        Progress,
-        ProcessingStats,
-        RESIZE_METHODS,
-        collect_target_files,
-        configure_console_output,
-        configure_pillow,
-        print_processing_summary,
-        reserve_output_path,
-        resize_image,
-    )
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import (
+    Progress,
+    ProcessingStats,
+    RESIZE_METHODS,
+    collect_target_files,
+    configure_console_output,
+    configure_pillow,
+    print_processing_summary,
+    reserve_output_path,
+    resize_image,
+)
 
 configure_console_output()
 

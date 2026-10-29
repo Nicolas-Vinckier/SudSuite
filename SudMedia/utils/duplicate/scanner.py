@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
-from ..filesystem.collector import collect_files
+from SudCore.files import collect_files
 from ..hashing.binary import content_hash
 from ..hashing.index import HammingIndex
 from ..hashing.visual import difference_hash, hamming_distance

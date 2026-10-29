@@ -5,15 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..filesystem.paths import ExtractionBackendError
-from ..filesystem.scanner import ScannedEntry
-
-
-# Alias FileEntry pointant vers ScannedEntry du filesystem
-@dataclass
-class FileEntry:
-    path: str
-    arcname: str
-    size: int
 
 
 @dataclass
@@ -29,6 +20,5 @@ class CompressionBackendError(RuntimeError):
 __all__ = [
     "CompressionBackendError",
     "ExtractionBackendError",
-    "FileEntry",
     "Toolchain",
 ]

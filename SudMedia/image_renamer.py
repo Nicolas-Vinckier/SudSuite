@@ -1,26 +1,18 @@
 import os
 import datetime
 import sys
+from pathlib import Path
 import shutil
 
-try:
-    from .sudmedia_utils import (
-        IMAGE_EXTENSIONS,
-        MEDIA_EXTENSIONS,
-        Progress,
-        VIDEO_EXTENSIONS,
-        clean_input_path,
-        configure_console_output,
-    )
-except ImportError:
-    from sudmedia_utils import (
-        IMAGE_EXTENSIONS,
-        MEDIA_EXTENSIONS,
-        Progress,
-        VIDEO_EXTENSIONS,
-        clean_input_path,
-        configure_console_output,
-    )
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudMedia.utils import (
+    MEDIA_EXTENSIONS,
+    Progress,
+    clean_input_path,
+    configure_console_output,
+)
 
 configure_console_output()
 
@@ -33,12 +25,6 @@ HEADER = r"""
  |____/ \__,_|\__,_|_| \_\___|_| |_|\__,_|_| |_| |_|\___|_|   
 
 """
-
-# Alias conservés pour les éventuels imports externes de l'ancien script.
-EXTENSIONS_IMAGE = IMAGE_EXTENSIONS
-EXTENSIONS_VIDEO = VIDEO_EXTENSIONS
-EXTENSIONS_MEDIA = MEDIA_EXTENSIONS
-
 
 def format_timestamp(ts, pattern):
     """
@@ -102,7 +88,7 @@ def run_rename():
         print("❌ Dossier invalide. Veuillez réessayer.")
 
     # 2. Lister les fichiers
-    files = [f for f in os.listdir(folder_path) if f.lower().endswith(EXTENSIONS_MEDIA)]
+    files = [f for f in os.listdir(folder_path) if f.lower().endswith(MEDIA_EXTENSIONS)]
 
     if not files:
         print("⚠️ Aucun fichier média trouvé dans ce dossier.")

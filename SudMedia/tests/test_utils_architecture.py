@@ -27,7 +27,6 @@ from SudMedia.utils import (
     collect_files,
     collect_target_files,
     configure_console_output,
-    console,
     content_hash,
     describe_backend,
     difference_hash,
@@ -56,7 +55,6 @@ from SudMedia.utils import (
     unique_path,
     walk_filtered,
 )
-from SudMedia.utils.console import configure_console_output as console_cfg
 from SudMedia.utils.duplicate import scan_duplicates as dupl_scan
 from SudMedia.utils.filesystem import clean_input_path as fs_clean
 from SudMedia.utils.hashing import hash_file as hash_f
@@ -69,7 +67,6 @@ from SudMedia.utils.ocr import OCRDocument, OCRPage
 class UtilsArchitectureTests(unittest.TestCase):
     def test_hub_reexports_and_submodules(self):
         self.assertTrue(callable(configure_console_output))
-        self.assertTrue(callable(console_cfg))
         self.assertTrue(callable(fs_clean))
         self.assertTrue(callable(hash_f))
         self.assertTrue(callable(img_resize))
