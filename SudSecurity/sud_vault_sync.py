@@ -2,8 +2,12 @@ import os
 import sys
 import time
 import json
-import shutil
 from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudCore.files import atomic_write_json
 
 
 def print_header():
@@ -20,7 +24,7 @@ def print_header():
 
 
 try:
-    from cryptography.fernet import Fernet
+    from SudSecurity.vault import VaultError, create_key, decrypt_file, default_key_path, encrypt_file, load_key
 except ImportError:
     try:
         print_header()
@@ -32,7 +36,6 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-KEY_FILE = "sudsuite.key"
 STATE_FILE = ".sudvault_state.json"
 EXTENSION = ".sud"
 IGNORED_DIRS = {".git", "node_modules", "__pycache__"}
@@ -70,10 +73,6 @@ def safe_print(msg, end="\n"):
         print(clean_msg, end=end)
 
 
-def get_key_path():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), KEY_FILE)
-
-
 def format_size(size_bytes):
     """Formate une taille en octets vers une unité lisible."""
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -84,56 +83,31 @@ def format_size(size_bytes):
 
 
 def manage_key():
-    """Gère le chargement ou la création de la clé de chiffrement."""
-    key_path = get_key_path()
+    """Charge la clé de chiffrement ou propose d'en générer une."""
+    key_path = default_key_path()
+    fernet = load_key(key_path)
+    if fernet is not None:
+        safe_print(f"{E['SUCCESS']} Clé de chiffrement chargée ({key_path}).")
+        return fernet
 
-    if os.path.exists(key_path):
-        with open(key_path, "rb") as f:
-            key = f.read()
-            safe_print(f"{E['SUCCESS']} Clé de chiffrement 'sudsuite.key' chargée.")
-            return Fernet(key)
-    else:
-        safe_print(
-            f"{E['WARN']} Fichier 'sudsuite.key' introuvable dans le répertoire du script."
-        )
-        rep = input("Voulez-vous générer une nouvelle clé ? (O/N) : ").strip().upper()
-        if rep == "O":
-            key = Fernet.generate_key()
-            with open(key_path, "wb") as f:
-                f.write(key)
-            safe_print(
-                f"\n{E['SUCCESS']} Nouvelle clé générée et sauvegardée ! ('sudsuite.key')"
-            )
-            safe_print(
-                f"{E['ALERT']} ATTENTION : Vous devez copier MANUELLEMENT ce fichier 'sudsuite.key' sur l'autre PC"
-            )
-            safe_print(
-                "   pour pouvoir déchiffrer vos fichiers. Ne perdez pas ce fichier !\n"
-            )
-            return Fernet(key)
-        else:
-            safe_print(f"{E['ERROR']} Opération annulée, aucune clé disponible.")
-            sys.exit(1)
+    safe_print(f"{E['WARN']} Clé de chiffrement introuvable : {key_path}")
+    rep = input("Voulez-vous générer une nouvelle clé ? (O/N) : ").strip().upper()
+    if rep != "O":
+        safe_print(f"{E['ERROR']} Opération annulée, aucune clé disponible.")
+        sys.exit(1)
+
+    fernet = create_key(key_path)
+    safe_print(f"{E['SUCCESS']} Nouvelle clé générée et sauvegardée : {key_path}")
+    safe_print(
+        f"{E['ALERT']} ATTENTION : copiez MANUELLEMENT ce fichier sur l'autre PC"
+    )
+    safe_print("   pour pouvoir déchiffrer vos fichiers. Ne le perdez pas, ne le partagez pas !")
+    return fernet
 
 
-def encrypt_file(fernet, src_path, dst_path):
-    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-    with open(src_path, "rb") as f:
-        data = f.read()
-    encrypted_data = fernet.encrypt(data)
-    with open(dst_path, "wb") as f:
-        f.write(encrypted_data)
-    return os.path.getsize(dst_path)
-
-
-def decrypt_file(fernet, src_path, dst_path):
-    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-    with open(src_path, "rb") as f:
-        encrypted_data = f.read()
-    data = fernet.decrypt(encrypted_data)
-    with open(dst_path, "wb") as f:
-        f.write(data)
-    return os.path.getsize(dst_path)
+def is_temporary(filename):
+    """Fichiers temporaires des écritures atomiques, à ne jamais synchroniser."""
+    return filename.startswith(".") and filename.endswith(".tmp")
 
 
 def mode_encryption(fernet):
@@ -160,7 +134,7 @@ def mode_encryption(fernet):
     for root, dirs, files in os.walk(local_dir):
         dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
         for file in files:
-            if file == STATE_FILE:
+            if file == STATE_FILE or is_temporary(file):
                 continue
             src_path = os.path.join(root, file)
             rel_path = os.path.relpath(src_path, local_dir)
@@ -172,7 +146,7 @@ def mode_encryption(fernet):
                 files_processed += 1
                 total_size += size
                 safe_print(E["SUCCESS"])
-            except Exception as e:
+            except (OSError, VaultError) as e:
                 safe_print(f"{E['ERROR']} Erreur: {e}")
 
     elapsed = time.time() - start_time
@@ -205,7 +179,7 @@ def mode_decryption(fernet):
     for root, dirs, files in os.walk(cloud_dir):
         dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
         for file in files:
-            if not file.endswith(EXTENSION):
+            if not file.endswith(EXTENSION) or is_temporary(file):
                 continue
 
             src_path = os.path.join(root, file)
@@ -221,7 +195,7 @@ def mode_decryption(fernet):
                 files_processed += 1
                 total_size += size
                 safe_print(E["SUCCESS"])
-            except Exception as e:
+            except (OSError, VaultError) as e:
                 safe_print(f"{E['ERROR']} Erreur: {e}")
 
     elapsed = time.time() - start_time
@@ -239,7 +213,7 @@ def sync_step(fernet, local_dir, cloud_dir, state):
         for root, dirs, files in os.walk(local_dir):
             dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
             for file in files:
-                if file == STATE_FILE:
+                if file == STATE_FILE or is_temporary(file):
                     continue
                 full_path = os.path.join(root, file)
                 rel_path = os.path.relpath(full_path, local_dir).replace("\\", "/")
@@ -250,7 +224,7 @@ def sync_step(fernet, local_dir, cloud_dir, state):
         for root, dirs, files in os.walk(cloud_dir):
             dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
             for file in files:
-                if not file.endswith(EXTENSION):
+                if not file.endswith(EXTENSION) or is_temporary(file):
                     continue
                 full_path = os.path.join(root, file)
                 rel_path = os.path.relpath(full_path, cloud_dir)[
@@ -344,7 +318,7 @@ def sync_step(fernet, local_dir, cloud_dir, state):
                         "cloud_mtime": cloud_mtime,
                     }
                     changed = True
-        except Exception as e:
+        except (OSError, VaultError) as e:
             safe_print(f"{E['WARN']} Erreur de synchronisation sur '{rel_path}': {e}")
 
     # Nettoyage des fichiers supprimés des deux côtés a priori
@@ -366,15 +340,14 @@ def load_state(local_dir):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
+        except (OSError, ValueError):
             return {}
     return {}
 
 
 def save_state(local_dir, state):
     path = get_state_path(local_dir)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=4)
+    atomic_write_json(path, state)
 
 
 def mode_sync(fernet):
@@ -413,7 +386,7 @@ def mode_sync(fernet):
 def main():
     try:
         print_header()
-    except:
+    except UnicodeEncodeError:
         pass
     fernet = manage_key()
 

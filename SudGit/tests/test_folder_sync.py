@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import sud_folder_sync as sync
+from SudGit import sud_folder_sync as sync
 
 
 class DeletionSafetyTests(unittest.TestCase):
@@ -87,5 +87,3 @@ class DeletionSafetyTests(unittest.TestCase):
             self.run_sync()
 
 
-if __name__ == "__main__":
-    unittest.main()

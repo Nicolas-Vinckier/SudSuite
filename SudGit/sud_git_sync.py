@@ -6,6 +6,12 @@ import time
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from SudCore.files import atomic_write_json
 
 
 # Détection initiale du support UTF-8
@@ -104,9 +110,8 @@ def charger_config():
 
 def sauvegarder_config(config):
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
-    except Exception as e:
+        atomic_write_json(CONFIG_FILE, config)
+    except OSError as e:
         safe_print(f"{E['ERROR']} \033[91mErreur lors de la sauvegarde : {e}\033[0m")
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -11,19 +10,8 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import configure_console_output
 from SudSecurity.integrity import create_manifest, verify_manifest
-
-
-def configure_console_output() -> None:
-    if sys.platform == "win32":
-        os.system("")
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure:
-            try:
-                reconfigure(encoding="utf-8")
-            except (AttributeError, LookupError, OSError):
-                pass
 
 
 def print_banner() -> None:
