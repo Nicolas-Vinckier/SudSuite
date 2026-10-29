@@ -1,7 +1,16 @@
-# Extensions à ignorer
+# Python
+__pycache__/
 *.pyc
+.pytest_cache/
+.venv/
+venv/
 
-# Images
+# Secrets et données chiffrées : ne jamais versionner
+*.key
+*.sud
+.sudvault_state.json
+
+# Médias de test ou personnels
 *.png
 *.jpg
 *.jpeg
@@ -11,14 +20,15 @@
 *.tiff
 *.ico
 *.svg
-*.webp
 *.heic
 *.jfif
 *.crdownload
 
-# Configurations locales générées par les outils
+# Configurations et états locaux générés par les outils
 **/configs/
+/SudGit/sud_git_config.json
+/SudGit/.sud_folder_sync_state/
+*_Integrity_*.json
 /SudDuplicate_*
 /SudOCR_*
-*.json
-/SudGit/.sud_folder_sync_state/
+*.tmp

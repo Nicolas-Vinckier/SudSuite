@@ -1,0 +1,6 @@
+# Dépendances de tous les outils (voir pyproject.toml pour les extras par package)
+Pillow
+PyMuPDF
+qrcode[pil]
+cryptography
+pytest

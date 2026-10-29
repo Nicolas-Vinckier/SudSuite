@@ -1,0 +1,22 @@
+[project]
+name = "sudsuite"
+version = "1.0.0"
+description = "Suite d'outils en ligne de commande : médias, synchronisation et sécurité"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+media = ["Pillow", "PyMuPDF", "qrcode[pil]"]
+security = ["cryptography"]
+dev = ["pytest"]
+all = ["Pillow", "PyMuPDF", "qrcode[pil]", "cryptography"]
+
+[project.scripts]
+sudsuite = "sudsuite:main"
+
+[tool.setuptools]
+py-modules = ["sudsuite"]
+packages = ["SudCore", "SudGit", "SudMedia", "SudSecurity"]
+
+[tool.pytest.ini_options]
+testpaths = ["SudCore", "SudGit", "SudMedia", "SudSecurity"]

@@ -27,3 +27,10 @@ Ce document définit les règles de conception pour les outils de **SudSuite**.
 - Maintenir le `README.md` à jour pour chaque nouvel outil.
 - Utiliser l'auto-naming avec horodatage (`YYYYMMDD_HHMMSS`) pour les nouveaux fichiers générés.
 - Vérifier l'intégrité des données après chaque opération lourde.
+
+## 🧩 Architecture
+
+- **SudCore** contient le code réutilisable (fichiers, console, lanceur) : un outil n'en redéfinit jamais une copie locale.
+- Chaque package (`SudMedia`, `SudGit`, `SudSecurity`) expose un `launcher.py` + `__main__.py` ; tout nouvel outil s'y déclare dans `TOOLS`.
+- Pas de code de compatibilité avec d'anciennes versions : on migre et on supprime.
+- Toute écriture de configuration, d'état ou de clé passe par les écritures atomiques de SudCore.

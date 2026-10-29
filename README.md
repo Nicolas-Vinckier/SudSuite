@@ -1,6 +1,29 @@
 # 🛠️ Tools - Sud Suite
 
-Bienvenue dans la suite d'outils **Sud**, une collection de scripts Python conçus pour simplifier la gestion de vos médias (images et vidéos).
+Bienvenue dans la suite d'outils **Sud**, une collection de scripts Python répartis en trois packages (`SudMedia`, `SudGit`, `SudSecurity`) qui s'appuient sur une bibliothèque commune, `SudCore`.
+
+## ▶️ Lancer SudSuite
+
+Un point d'entrée unique et un point d'entrée par package :
+
+```bash
+python sudsuite.py                       # menu principal (media / git / security)
+python sudsuite.py media                 # menu de SudMedia
+python sudsuite.py media compressor ...  # lance un outil directement avec ses arguments
+python -m SudMedia                       # menu de SudMedia
+python -m SudGit                         # menu de SudGit
+python -m SudSecurity                    # menu de SudSecurity
+python sudsuite.py --list                # liste les packages (ou les outils d'un package)
+```
+
+Chaque outil reste utilisable seul (`python SudMedia/image_compressor.py`).
+
+| Package | Outils (clé du lanceur) |
+|---|---|
+| `SudMedia` | `compressor`, `sorting`, `rename`, `convert`, `resize`, `master`, `pdf2img`, `excel2pdf`, `archive`, `weight`, `duplicate`, `ocr`, `docx`, `qr` |
+| `SudGit` | `git`, `folder` |
+| `SudSecurity` | `vault`, `integrity` |
+| `SudCore` | bibliothèque partagée (fichiers, console, lanceur), sans point d'entrée |
 
 ## 🚀 Outils Inclus
 
@@ -46,8 +69,7 @@ Un outil de compression de dossiers intelligent pour archiver vos projets tout e
 Le fichier `folder_compressor.py` sert uniquement de façade et d'interface en ligne
 de commande. Son moteur est découpé dans `SudMedia/utils/folder_archive/` : chemins et
 sécurité, progression, détection des outils, compression, extraction et
-vérification. Les anciens imports depuis `SudMedia.folder_compressor` restent
-compatibles.
+vérification.
 
 ### 4. 🏷️ Sud Rename (`image_renamer.py`)
 
@@ -125,7 +147,9 @@ page, y compris lorsque le tableau est très grand.
 
 Un outil de sécurité robuste permettant de chiffrer un dossier local vers un dossier distant (type Google Drive, OneDrive) et de synchroniser les modifications de manière bidirectionnelle.
 
-- **Gestion Sécurisée de la Clé** : Génération et chargement d'un fichier `sudsuite.key` (à conserver précieusement et copier sur vos autres PC).
+- **Gestion Sécurisée de la Clé** : Génération et chargement d'un fichier `sudsuite.key`, stocké hors du dépôt dans `~/.sudsuite/` (ou à l'emplacement donné par la variable `SUDSUITE_KEY`) avec des droits restreints à votre utilisateur. À conserver précieusement et à copier sur vos autres PC.
+- **Chiffrement par blocs** : les fichiers sont chiffrés par blocs de 4 Mo (jamais chargés entièrement en mémoire), avec détection des fichiers tronqués, réordonnés ou altérés, et écriture atomique.
+- **Format `.sud` v1 uniquement** : les anciens fichiers `.sud` (chiffrés en un seul bloc) ne sont plus lus ; déchiffrez-les avec une version antérieure avant de migrer.
 - **Mode Chiffrement (Local -> Cloud)** : Chiffre le contenu complet d'un dossier avec l'extension `.sud` en conservant l'arborescence.
 - **Mode Déchiffrement (Cloud -> Local)** : Restaure les fichiers originaux à partir du dossier chiffré.
 - **Synchronisation Continue Bidirectionnelle** : Applique intelligemment les ajouts, modifications et suppressions entre le local et le dossier chiffré cloud en permanence.
@@ -214,14 +238,13 @@ Crée des QR codes fonctionnels avec un niveau de personnalisation simple ou tr�
 ## 🛠️ Installation
 
 1.  Assurez-vous d'avoir [Python](https://www.python.org/) installé.
-2.  Installez **Pillow** pour les outils d'image :
+2.  Installez les dépendances Python (toutes, ou par package) :
     ```bash
-    pip install Pillow
+    pip install -r requirements.txt
+    pip install ".[media]"      # Pillow, PyMuPDF, qrcode
+    pip install ".[security]"   # cryptography
     ```
-3.  Pour `pdf_to_image.py`, installez également **PyMuPDF** :
-    ```bash
-    pip install PyMuPDF
-    ```
+3.  `pdf_to_image.py` et l'OCR de PDF nécessitent **PyMuPDF** (inclus dans `.[media]`).
 4.  Pour `excel_to_pdf.py`, installez **Microsoft Excel** ou **LibreOffice**.
     Sous Windows, Excel est utilisé en priorité ; LibreOffice sert de repli et
     son exécutable `soffice` est détecté automatiquement.
@@ -229,50 +252,32 @@ Crée des QR codes fonctionnels avec un niveau de personnalisation simple ou tr�
     langues souhaitées (`fra` et/ou `eng`). Les PDF nécessitent aussi
     **PyMuPDF**. Le chemin de Tesseract peut être transmis avec `--tesseract`
     s'il n'est pas dans le PATH.
-6.  Pour `qr_code_generator.py`, installez la bibliothèque QR avec Pillow :
-    ```bash
-    pip install "qrcode[pil]"
-    ```
+6.  `qr_code_generator.py` nécessite `qrcode[pil]` (inclus dans `.[media]`).
 
-### Vérifier SudMedia
+### Vérifier la suite
 
-Depuis la racine de SudSuite :
+Depuis la racine de SudSuite (tests de `SudCore`, `SudMedia`, `SudGit` et `SudSecurity`) :
 
 ```bash
-py -m unittest discover -v
+python -m pytest -q
 ```
 
-Le lanceur dédié ci-dessous découvre et exécute tous les fichiers
-`SudMedia/tests/test_*.py` (unitaires et intégration légère), y compris les
-tests ajoutés ultérieurement :
-
-```bash
-py .\SudMedia\tests\test_all.py
-```
-
-Les fichiers de test peuvent également être lancés directement, y compris depuis
-le dossier `SudMedia` :
-
-```bash
-py .\tests\test_tools.py
-```
+La CI GitHub (`.github/workflows/tests.yml`) exécute la même commande.
 
 ### Fonctions partagées et architecture modulaire (`SudMedia/utils/`)
 
-Les utilitaires et moteurs de SudMedia sont désormais centralisés et organisés par **thèmes de fonctionnalités généralistes** dans le package `SudMedia/utils/` :
+Les primitives de fichiers (`collect_files`, `hash_file`, `unique_path`, `clean_input_path`, `paths_overlap`, écritures atomiques) et la configuration de la console vivent dans **`SudCore`**, partagé par tous les packages ; `SudMedia.utils` les ré-exporte. Les utilitaires et moteurs de SudMedia sont centralisés et organisés par **thèmes de fonctionnalités généralistes** dans le package `SudMedia/utils/` :
 
 - **`SudMedia/utils/filesystem/`** : Parcours filtré (`walk_filtered`, `scan_folder`), collecte de fichiers (`collect_files`, `collect_target_files`), gestion sécurisée des chemins (`clean_input_path`, `unique_path`, `safe_member_path`), écritures atomiques (`atomic_write_text`, `atomic_write_json`) et mise en quarantaine (`quarantine_files`).
 - **`SudMedia/utils/hashing/`** : Empreintes binaires (`hash_file`, `content_hash`), empreintes perceptuelles pour images (`difference_hash`, `hamming_distance`) et indexation métrique par BK-Tree (`HammingIndex`).
 - **`SudMedia/utils/image/`** : Constantes multimédias, configuration Pillow, redimensionnement géométrique (`resize_image`) et options de sauvegarde / conversion.
 - **`SudMedia/utils/progress/`** : Barre de progression universelle (`Progress`), proxy de lecture (`ProgressReader`) et formatage temporel compact (`format_duration`, `format_size_short`).
 - **`SudMedia/utils/metrics/`** : Analyse des variations de taille (`analyze_size_change`, `format_size`), estimation de risque qualité (`analyze_quality`) et bilans d'opérations (`ProcessingStats`, `print_processing_summary`).
-- **`SudMedia/utils/console/`** : Configuration du terminal (`configure_console_output` pour UTF-8 et VT100).
 - **`SudMedia/utils/folder_archive/`** : Moteurs de compression (`compress_zip_*`, `compress_tar_xz_*`), d'extraction et de vérification d'intégrité.
 - **`SudMedia/utils/duplicate/`** : Moteur de détection de doublons exacts et visuels (`scan_duplicates`, `quarantine_duplicates`).
 - **`SudMedia/utils/ocr/`** : Moteur OCR et extraction textuelle (`extract_document`, `process_documents`, `TesseractBackend`).
 - **`SudMedia/utils/office/`** : Conversion Excel/PDF et optimisation DOCX (`convert_spreadsheet_to_pdf`, `optimize_docx`, `verify_docx_package`).
 
-Une façade de compatibilité `SudMedia/sudmedia_utils.py` ainsi que des shims réexportent l'ensemble de ces symboles pour garantir la rétrocompatibilité totale avec les scripts existants.
 
 ---
 
