@@ -22,3 +22,9 @@ def configure_console_output() -> None:
             # Une sortie redirigée ou remplacée (tests, IDE) n'est pas toujours
             # reconfigurable ; l'outil reste utilisable avec son encodage courant.
             pass
+
+
+def ask_path(prompt: str) -> str | None:
+    """Demande un chemin ; ``0`` ou une saisie vide annule et renvoie ``None``."""
+    answer = input(f"{prompt} (0 = retour) : ").strip().strip("\"'").strip()
+    return None if answer in {"", "0"} else answer

@@ -10,7 +10,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from SudCore.console import configure_console_output
+from SudCore.console import ask_path, configure_console_output
 from SudSecurity.integrity import create_manifest, verify_manifest
 
 
@@ -39,7 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _create(args) -> int:
-    raw_root = args.root or input("📂 Dossier à protéger : ").strip().strip('"')
+    raw_root = args.root or ask_path("📂 Dossier à protéger")
+    if raw_root is None:
+        return 0
     root = Path(raw_root).expanduser().resolve()
     if not root.is_dir():
         print("❌ Dossier invalide.")
@@ -54,12 +56,16 @@ def _create(args) -> int:
 
 
 def _verify(args) -> int:
-    raw_manifest = args.manifest or input("📄 Manifeste à vérifier : ").strip().strip('"')
+    raw_manifest = args.manifest or ask_path("📄 Manifeste à vérifier")
+    if raw_manifest is None:
+        return 0
     manifest = Path(raw_manifest).expanduser().resolve()
     if not manifest.is_file():
         print("❌ Manifeste introuvable.")
         return 2
-    raw_root = args.root or input("📂 Dossier à contrôler : ").strip().strip('"')
+    raw_root = args.root or ask_path("📂 Dossier à contrôler")
+    if raw_root is None:
+        return 0
     print("🔎 Vérification des fichiers...")
     report = verify_manifest(manifest, raw_root, detect_unexpected=not args.ignore_new)
     print("\n" + "=" * 52)
@@ -86,8 +92,12 @@ def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
-        choice = input("1. Créer un manifeste\n2. Vérifier un manifeste\nVotre choix : ").strip()
-        return _verify(argparse.Namespace(manifest=None, root=None, ignore_new=False)) if choice == "2" else _create(argparse.Namespace(root=None, output=None))
+        choice = input("1. Créer un manifeste\n2. Vérifier un manifeste\n0. Retour\nVotre choix : ").strip()
+        if choice == "1":
+            return _create(argparse.Namespace(root=None, output=None))
+        if choice == "2":
+            return _verify(argparse.Namespace(manifest=None, root=None, ignore_new=False))
+        return 0
     return _create(args) if args.command == "create" else _verify(args)
 
 

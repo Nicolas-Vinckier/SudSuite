@@ -50,6 +50,17 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(core_launcher.run_module("x"), 4)
 
 
+class AskPathTests(unittest.TestCase):
+    def test_zero_and_empty_cancel_and_quotes_are_removed(self):
+        from SudCore import ask_path
+
+        with mock.patch("builtins.input", side_effect=["0", "", ' "C:/a b" ']):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertIsNone(ask_path("x"))
+                self.assertIsNone(ask_path("x"))
+                self.assertEqual(ask_path("x"), "C:/a b")
+
+
 class CatalogTests(unittest.TestCase):
     def test_every_catalog_module_exists_and_is_runnable(self):
         import importlib.util

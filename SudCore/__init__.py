@@ -1,6 +1,6 @@
 """Fondations réutilisables par les outils de SudSuite."""
 
-from .console import configure_console_output
+from .console import ask_path, configure_console_output
 from .files import (
     IGNORED_DIRECTORY_NAMES,
     atomic_write_bytes,
@@ -17,6 +17,7 @@ from .launcher import Entry, launch, run_module
 __all__ = [
     "Entry",
     "IGNORED_DIRECTORY_NAMES",
+    "ask_path",
     "atomic_write_bytes",
     "atomic_write_json",
     "atomic_write_text",

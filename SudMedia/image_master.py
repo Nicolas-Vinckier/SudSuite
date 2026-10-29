@@ -5,6 +5,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import (
     IMAGE_OUTPUT_FORMATS,
     Progress,
@@ -63,9 +64,7 @@ def main():
     if len(sys.argv) > 1:
         paths = sys.argv[1:]
     else:
-        path_input = (
-            input("📂 Glissez un dossier ou fichier à traiter : ").strip().strip('"')
-        )
+        path_input = ask_path("Glissez un fichier ou dossier (ou entrez le chemin)")
         if path_input:
             paths = [path_input]
 

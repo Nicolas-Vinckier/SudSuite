@@ -10,6 +10,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import configure_console_output, format_size
 from SudMedia.utils.duplicate import quarantine_duplicates, scan_duplicates
 
@@ -60,7 +61,9 @@ def main(argv=None) -> int:
     configure_console_output()
     print_banner()
     args = build_parser().parse_args(argv)
-    paths = args.paths or [input("📂 Fichier ou dossier à analyser : ").strip().strip('"')]
+    paths = args.paths or [ask_path("📂 Fichier ou dossier à analyser")]
+    if paths == [None]:
+        return 0
     if not any(Path(path).exists() for path in paths):
         print("❌ Aucun chemin valide à analyser.")
         return 2

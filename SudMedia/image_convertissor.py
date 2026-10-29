@@ -5,6 +5,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import (
     IMAGE_OUTPUT_FORMATS,
     Progress,
@@ -102,16 +103,17 @@ def convert_image(
 def main():
     print_banner()
 
-    if len(sys.argv) < 2:
-        print(
-            "📂 Utilisation : python image_convertissor.py <image_ou_dossier_1> [image_ou_dossier_2] ..."
-        )
-        sys.exit(0)
+    paths = sys.argv[1:]
+    if not paths:
+        answer = ask_path("Glissez une image ou un dossier (ou entrez le chemin)")
+        if answer is None:
+            return
+        paths = [answer]
 
     # 1. Collecte des fichiers
     print("🔍 Analyse des fichiers...")
     files = collect_target_files(
-        sys.argv[1:],
+        paths,
         VALID_EXTENSIONS,
         item_label="une image supportée",
     )
@@ -135,7 +137,7 @@ def main():
     target_format, target_ext = SUPPORTED_OUTPUT_FORMATS[choix]
 
     # 3. Détermination du dossier de sortie
-    first_arg = sys.argv[1]
+    first_arg = paths[0]
     if os.path.isdir(first_arg):
         output_dir = first_arg.rstrip("/\\") + "_convert"
     else:

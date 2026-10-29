@@ -10,6 +10,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import configure_console_output
 from SudMedia.utils.office import (
     OfficeConversionError,
@@ -47,7 +48,9 @@ def _default_output_dir(first_source: Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     configure_console_output()
     args = build_parser().parse_args(argv)
-    raw_paths = args.paths or [input("Tableur Excel ou dossier : ").strip().strip('"')]
+    raw_paths = args.paths or [ask_path("Tableur Excel ou dossier")]
+    if raw_paths == [None]:
+        return 0
     sources = collect_spreadsheets(raw_paths)
     if not sources:
         print("Aucun tableur Excel ou LibreOffice trouve.")

@@ -106,3 +106,8 @@ def launch(
             print("❌ Choix invalide.")
             continue
         run_entry(entry)
+        if entry.module is not None:
+            try:
+                input("\n↩️  Entrée pour revenir au menu... ")
+            except (EOFError, KeyboardInterrupt):
+                print()

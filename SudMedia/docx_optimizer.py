@@ -9,6 +9,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import configure_console_output, format_size
 from SudMedia.utils.office import (
     DocxOptimizationError,
@@ -114,9 +115,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     interactive = not args.paths
-    raw_paths = args.paths or [
-        input("📄 DOCX ou dossier à optimiser : ").strip().strip('"')
-    ]
+    raw_paths = args.paths or [ask_path("📄 DOCX ou dossier à optimiser")]
+    if raw_paths == [None]:
+        return 0
     sources = collect_docx(raw_paths)
     if not sources:
         print("❌ Aucun fichier DOCX trouvé.")

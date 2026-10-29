@@ -6,6 +6,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import (
     analyze_quality,
     analyze_size_change,
@@ -260,16 +261,14 @@ def get_target_files(paths):
 
 def main():
     print_banner()
-    if len(sys.argv) < 2:
-        print(
-            "🖼️  Utilisation : python image_compressor.py <image_ou_dossier_1> [image_ou_dossier_2] ..."
-        )
-        print("\nExemples :")
-        print("  python image_compressor.py mon_image.jpg")
-        print("  python image_compressor.py ./mon_dossier_images")
-        sys.exit(0)
+    paths = sys.argv[1:]
+    if not paths:
+        answer = ask_path("Glissez une image ou un dossier (ou entrez le chemin)")
+        if answer is None:
+            return
+        paths = [answer]
 
-    target_files = get_target_files(sys.argv[1:])
+    target_files = get_target_files(paths)
 
     if not target_files:
         print("[Erreur] Aucun fichier à traiter.")

@@ -5,6 +5,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import (
     IMAGE_OUTPUT_FORMATS,
     Progress,
@@ -164,10 +165,9 @@ def main():
 
     paths = [p.strip('"\' ') for p in sys.argv[1:] if p.strip('"\' ')]
     if not paths:
-        path_input = input("📂 Entrez le chemin du PDF ou du dossier : ").strip().strip('"\' ')
-        if not path_input:
-            print("❌ Aucun chemin fourni. Arrêt.")
-            sys.exit(0)
+        path_input = ask_path("Entrez le chemin du PDF ou du dossier")
+        if path_input is None:
+            return
         paths = [path_input]
 
     # 1. Collecte des fichiers

@@ -10,6 +10,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from SudCore.console import ask_path
 from SudMedia.utils import configure_console_output
 from SudMedia.utils.ocr import TesseractBackend, find_tesseract, process_documents
 
@@ -38,7 +39,9 @@ def main(argv=None) -> int:
     configure_console_output()
     print_banner()
     args = build_parser().parse_args(argv)
-    paths = args.paths or [input("📂 Image, PDF ou dossier : ").strip().strip('"')]
+    paths = args.paths or [ask_path("📂 Image, PDF ou dossier")]
+    if paths == [None]:
+        return 0
     output = Path(args.output) if args.output else Path.cwd() / (
         f"SudOCR_{datetime.now():%Y%m%d_%H%M%S}"
     )
